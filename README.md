@@ -1,6 +1,6 @@
-# ExampleProject - Unreal Engine 5.6 Multiplayer Demo
+# Unreal Engine 5.6 Multiplayer Demo
 
-## Educational Project for IADE - University of Creative Arts
+## Example Project for IADE - University of Creative Arts
 
 This project is developed as part of the **Games and Apps Development** course at IADE - University of Creative Arts, Portugal, specifically for the **Emergent Game Technologies** and **Distributed Programming** classes.
 
@@ -10,7 +10,6 @@ ExampleProject is a multiplayer Unreal Engine 5.6 demonstration showcasing:
 - **Network Programming**: Client-server architecture implementation
 - **Replication Systems**: Player state synchronization across network
 - **Gameplay Mechanics**: Interactive collectible system with real-time updates
-- **Debug Systems**: Network role identification and logging
 
 ### 🎮 Features
 
