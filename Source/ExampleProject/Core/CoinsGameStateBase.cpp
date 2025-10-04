@@ -4,7 +4,7 @@
 #include "CoinsGameStateBase.h"
 #include <Kismet/GameplayStatics.h>
 #include <Net/UnrealNetwork.h>
-#include "CoinActor.h"
+#include "../Collectibles/CoinActor.h"
 
 
 ACoinsGameStateBase::ACoinsGameStateBase()

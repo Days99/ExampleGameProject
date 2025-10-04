@@ -3,8 +3,8 @@
 
 #include "LevelCompleteArea.h"
 #include <Components/BoxComponent.h>
-#include "ExampleProjectCharacter.h"
-#include "CoinsGameStateBase.h"
+#include "../Core/ExampleProjectCharacter.h"
+#include "../Core/CoinsGameStateBase.h"
 
 // Sets default values
 ALevelCompleteArea::ALevelCompleteArea()

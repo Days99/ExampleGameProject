@@ -3,9 +3,9 @@
 
 #include "CoinActor.h"
 #include "GameFramework/Character.h"
-#include "ExampleProjectCharacter.h"
+#include "../Core/ExampleProjectCharacter.h"
 #include <Kismet/GameplayStatics.h>
-#include <CoinsGameStateBase.h>
+#include "../Core/CoinsGameStateBase.h"
 
 // Sets default values
 ACoinActor::ACoinActor()
@@ -24,7 +24,7 @@ ACoinActor::ACoinActor()
 
 	CollisionSphere->OnComponentBeginOverlap.AddDynamic(this, &ACoinActor::OnOverlapBegin);
 
-	SetReplicates(true);
+	bReplicates = true;
 }
 
 // Called when the game starts or when spawned

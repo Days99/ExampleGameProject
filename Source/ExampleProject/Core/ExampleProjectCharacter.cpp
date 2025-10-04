@@ -10,7 +10,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
-#include "ExampleProject.h"
+#include "../ExampleProject.h"
 #include "MyPlayerState.h"
 
 AExampleProjectCharacter::AExampleProjectCharacter()

@@ -6,7 +6,7 @@
 #include "Engine/LocalPlayer.h"
 #include "InputMappingContext.h"
 #include "Blueprint/UserWidget.h"
-#include "ExampleProject.h"
+#include "../ExampleProject.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 
 void AExampleProjectPlayerController::BeginPlay()
