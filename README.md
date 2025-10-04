@@ -2,7 +2,7 @@
 
 ## Educational Project for IADE - University of Creative Arts
 
-This project is developed as part of the **Emergent Game Technologies** and **Distributed Programming** courses at IADE - University of Creative Arts, Portugal.
+This project is developed as part of the **Games and Apps Development** course at IADE - University of Creative Arts, Portugal, specifically for the **Emergent Game Technologies** and **Distributed Programming** classes.
 
 ### 📋 Project Overview
 
@@ -104,24 +104,6 @@ This project demonstrates:
 - **Debug Techniques**: Network troubleshooting and logging
 - **Unreal Engine Networking**: Using UE5's replication system
 
-### 📚 Course Context
-
-This project serves as a practical implementation for:
-- **Emergent Game Technologies**: Advanced game development concepts
-- **Distributed Programming**: Network architecture and synchronization
-
-### 🔧 Debug Features
-
-The project includes comprehensive debug logging:
-- **Network Role Identification**: Shows server vs client execution
-- **Replication Tracking**: Monitors state synchronization
-- **Performance Metrics**: Network traffic and update frequency
-
-Debug logs can be viewed in:
-- Unreal Engine Output Log
-- Visual Studio Output Window
-- Console commands in the game
-
 ### 📁 Project Structure
 
 ```
@@ -139,14 +121,7 @@ ExampleProject/
 │   └── Variant_*/             # Variant-specific implementations
 ├── Config/                    # Engine configuration files
 └── Plugins/                   # Unreal Engine plugins
-```
 
-### 🤝 Contributing
-
-This is an educational project. Contributions should focus on:
-- Improving learning materials and documentation
-- Enhancing network debugging capabilities
-- Adding new gameplay mechanics for educational purposes
 
 ### 📄 License
 
@@ -156,8 +131,10 @@ This project is created for educational purposes as part of the Emergent Game Te
 
 **Copyright Notice:**
 - **Educational Institution**: IADE - University of Creative Arts, Portugal
+- **Course**: Games and Apps Development
+- **Classes**: Emergent Game Technologies, Distributed Programming
 - **Purpose**: Academic learning and demonstration
-- **Usage**: This project is intended solely for educational purposes within the context of the specified courses
+- **Usage**: This project is intended solely for educational purposes within the context of the specified classes
 
 **Restrictions:**
 - This code may not be used for commercial purposes
@@ -166,16 +143,10 @@ This project is created for educational purposes as part of the Emergent Game Te
 
 **Attribution:**
 When using or referencing this project, please include:
-- Course: Emergent Game Technologies / Distributed Programming
+- Course: Games and Apps Development
 - Institution: IADE - University of Creative Arts
 - Purpose: Educational demonstration
 
-### 📞 Contact
-
-For questions regarding this educational project:
-- **Institution**: IADE - University of Creative Arts
-- **Courses**: Emergent Game Technologies, Distributed Programming
-- **Academic Year**: 2024-2025
 
 ---
 
