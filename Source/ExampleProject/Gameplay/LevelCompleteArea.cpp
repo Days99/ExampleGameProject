@@ -24,7 +24,6 @@ ALevelCompleteArea::ALevelCompleteArea()
 void ALevelCompleteArea::BeginPlay()
 {
 	Super::BeginPlay();
-	
 }
 
 void ALevelCompleteArea::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32
@@ -38,8 +37,16 @@ void ALevelCompleteArea::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AAc
 			ACoinsGameStateBase* GameState = Cast<ACoinsGameStateBase>(GetWorld()->GetGameState());
 			if (GameState != nullptr)
 			{
-				if (GameState->TotalLevelCoins == 0)
+				// Check if puzzle is complete (all pressure plates active + all coins collected)
+				if (GameState->IsPuzzleComplete())
+				{
+					UE_LOG(LogTemp, Warning, TEXT("Level Complete! Player entered completion area with puzzle solved."));
 					GameState->MulticastOnLevelComplete(Character, true);
+				}
+				else
+				{
+					UE_LOG(LogTemp, Warning, TEXT("Cannot complete level - Puzzle not solved yet. Make sure all pressure plates are active and all coins collected!"));
+				}
 			}
 		}
 	}

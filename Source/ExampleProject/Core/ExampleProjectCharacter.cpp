@@ -12,6 +12,9 @@
 #include "InputActionValue.h"
 #include "../ExampleProject.h"
 #include "MyPlayerState.h"
+#include "Perception/AIPerceptionStimuliSourceComponent.h"
+#include "Perception/AISense_Sight.h"
+#include "HealthComponent.h"
 
 AExampleProjectCharacter::AExampleProjectCharacter()
 {
@@ -44,8 +47,18 @@ AExampleProjectCharacter::AExampleProjectCharacter()
 
 	// Create a follow camera
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
+
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
+
+	// Create AI Perception Stimuli Source component
+	StimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("StimuliSource"));
+	if (StimuliSource)
+	{
+		// Register this character as a sight stimulus so AI can see it
+		StimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
+		StimuliSource->RegisterWithPerceptionSystem();
+	}
 
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
@@ -140,4 +153,11 @@ void AExampleProjectCharacter::DoJumpEnd()
 {
 	// signal the character to stop jumping
 	StopJumping();
+}
+
+void AExampleProjectCharacter::TakeDamage_Implementation(float DamageAmount, AActor* DamageCauser)
+{
+	UE_LOG(LogEngine, Warning, TEXT("Took Damage"));
+	//UE_LOG(LogEngine, Warning, TEXT("%s took %.1f damage from %s"); , *GetName(), DamageAmount, *GetNameSafe(DamageCauser));
+	
 }

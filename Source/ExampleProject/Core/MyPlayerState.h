@@ -6,6 +6,33 @@
 #include "GameFramework/PlayerState.h"
 #include "MyPlayerState.generated.h"
 
+UENUM(BlueprintType)
+enum class EHostingType : uint8
+{
+    DedicatedServer    UMETA(DisplayName = "Dedicated Server"),
+    ClientHost         UMETA(DisplayName = "Client Host")
+};
+
+USTRUCT()
+struct FSessionInfo {
+    GENERATED_BODY()
+
+    UPROPERTY()
+    int id;
+
+    UPROPERTY()
+    FString name;
+
+    UPROPERTY()
+    FString serverip;
+
+    UPROPERTY()
+    int serverport;
+
+    UPROPERTY()
+    EHostingType hostingType;
+};
+
 /**
  * 
  */
@@ -14,15 +41,15 @@ class EXAMPLEPROJECT_API AMyPlayerState : public APlayerState
 {
 	GENERATED_BODY()
 
-private:
-
-	UPROPERTY(Replicated, VisibleAnywhere, Category = "Coins")
-	int collectedCoins;
-
 public:
 
 	UFUNCTION()
 	void AddCoin();
+
+private:
+
+    UPROPERTY(Replicated, VisibleAnywhere, Category = "Coins")
+    int collectedCoins;
 	
 	
 };

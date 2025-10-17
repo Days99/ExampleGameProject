@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Logging/LogMacros.h"
+#include "../Damageable.h"
 #include "ExampleProjectCharacter.generated.h"
 
 class USpringArmComponent;
@@ -19,7 +20,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
  *  Implements a controllable orbiting camera
  */
 UCLASS(abstract)
-class AExampleProjectCharacter : public ACharacter
+class AExampleProjectCharacter : public ACharacter, public IDamageable
 {
 	GENERATED_BODY()
 
@@ -30,6 +31,12 @@ class AExampleProjectCharacter : public ACharacter
 	/** Follow camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
 	UCameraComponent* FollowCamera;
+
+	/** AI Perception Stimuli Source - allows AI to detect this character */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="AI", meta = (AllowPrivateAccess = "true"))
+	class UAIPerceptionStimuliSourceComponent* StimuliSource;
+
+
 	
 protected:
 
@@ -94,5 +101,8 @@ public:
 
 	/** Returns FollowCamera subobject **/
 	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
+
+	// IDamageable interface implementation
+	virtual void TakeDamage_Implementation(float DamageAmount, AActor* DamageCauser) override;
 };
 

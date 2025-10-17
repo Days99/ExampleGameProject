@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
+using UnrealBuildTool.Rules;
 
 public class ExampleProject : ModuleRules
 {
@@ -18,8 +19,10 @@ public class ExampleProject : ModuleRules
 			"StateTreeModule",
 			"GameplayStateTreeModule",
 			"UMG",
-			"Slate"
-		});
+			"Slate",
+            "Sockets", 
+			"Networking"
+        });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 
