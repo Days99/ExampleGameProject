@@ -19,6 +19,9 @@ public:
 	/** Constructor */
 	AExampleProjectGameMode();
 
+	/** Called after a successful login - set up ownership for physics actors */
+	virtual void PostLogin(APlayerController* NewPlayer) override;
+
 	/** Respawn a player after they die */
 	UFUNCTION()
 	void RespawnPlayer(AController* Controller);

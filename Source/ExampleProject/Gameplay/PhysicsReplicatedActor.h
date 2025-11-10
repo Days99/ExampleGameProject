@@ -41,6 +41,35 @@ public:
 	/** Apply force to the mesh (only works on server) */
 	UFUNCTION(BlueprintCallable, Category = "Physics Actor")
 	void ApplyForce(FVector Force);
+
+	// ===== OWNERSHIP DEMONSTRATION METHODS =====
+
+	/** 
+	 * Server RPC to demonstrate ownership.
+	 * This will only execute if called by the owning client or the server.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Ownership Demo")
+	void ServerDemoMethod(const FString& CallerIdentification);
+
+	/**
+	 * Test method to call the Server RPC.
+	 * Call this from anywhere to see if the RPC succeeds based on ownership.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Ownership Demo")
+	void TestCallServerMethod(const FString& TestMessage);
+
+	/**
+	 * Set ownership of this actor to a specific player controller.
+	 * Pass nullptr to set ownership back to the server.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Ownership Demo")
+	void SetOwnershipToPlayer(APlayerController* NewOwner);
+
+	/**
+	 * Display current ownership information.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Ownership Demo")
+	void DisplayOwnershipInfo();
 };
 
 

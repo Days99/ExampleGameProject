@@ -41,7 +41,7 @@ bool FTCPClientRunnable::Init() {
     Socket->SetReceiveBufferSize(1024, NewSize);
 
     // connect to local server 127.0.0.1:8856 (same as original)
-    FIPv4Address Addr(127, 0, 0, 1);
+    FIPv4Address Addr(68, 221, 168, 179);
     TSharedRef<FInternetAddr> InternetAddr = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr();
     InternetAddr->SetIp(Addr.Value);
     InternetAddr->SetPort(8856);

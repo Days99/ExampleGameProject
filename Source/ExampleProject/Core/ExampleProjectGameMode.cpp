@@ -7,11 +7,46 @@
 #include "MyPlayerState.h"
 #include "TimerManager.h"
 #include "ExampleProjectPlayerController.h"
+#include "EngineUtils.h"
+#include "../Gameplay/PhysicsReplicatedActor.h"
 
 AExampleProjectGameMode::AExampleProjectGameMode()
 {
 	// Set default respawn delay
 	RespawnDelay = 3.0f;
+}
+
+void AExampleProjectGameMode::PostLogin(APlayerController* NewPlayer)
+{
+	Super::PostLogin(NewPlayer);
+
+	if (!NewPlayer)
+	{
+		return;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+	UE_LOG(LogTemp, Warning, TEXT("PostLogin called for PlayerController: %s"), *NewPlayer->GetName());
+	
+	// Find all PhysicsReplicatedActor instances in the world
+	int32 ActorCount = 0;
+	for (TActorIterator<APhysicsReplicatedActor> It(GetWorld()); It; ++It)
+	{
+		APhysicsReplicatedActor* PhysicsActor = *It;
+		if (PhysicsActor)
+		{
+			// Set ownership to this player controller
+			PhysicsActor->SetOwnershipToPlayer(NewPlayer);
+			ActorCount++;
+			
+			UE_LOG(LogTemp, Warning, TEXT("Set ownership of %s to %s"), 
+				*PhysicsActor->GetName(), *NewPlayer->GetName());
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("Total PhysicsReplicatedActors owned by %s: %d"), 
+		*NewPlayer->GetName(), ActorCount);
+	UE_LOG(LogTemp, Warning, TEXT("========================================"));
 }
 
 void AExampleProjectGameMode::RespawnPlayer(AController* Controller)
