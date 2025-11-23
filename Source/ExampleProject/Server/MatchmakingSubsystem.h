@@ -7,9 +7,9 @@
 #include "MatchSessionInfo.h"
 #include "MatchmakingSubsystem.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSessionsUpdated, const TArray<FMatchSessionInfo>&, Sessions);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHostRequested, int32, Port);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnConnectionStatusChanged, bool, bIsConnected);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMatchmakingSessionsUpdated, const TArray<FMatchSessionInfo>&, Sessions);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMatchmakingHostRequested, int32, Port);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMatchmakingConnectionStatusChanged, bool, bIsConnected);
 
 class FTCPClientRunnable;
 
@@ -38,13 +38,13 @@ public:
     const TArray<FMatchSessionInfo>& GetSessions() const { return Sessions; }
 
     UPROPERTY(BlueprintAssignable)
-    FOnSessionsUpdated OnSessionsUpdated;
+    FOnMatchmakingSessionsUpdated OnSessionsUpdated;
 
     UPROPERTY(BlueprintAssignable)
-    FOnHostRequested OnHostRequested;
+    FOnMatchmakingHostRequested OnHostRequested;
 
     UPROPERTY(BlueprintAssignable)
-    FOnConnectionStatusChanged OnConnectionStatusChanged;
+    FOnMatchmakingConnectionStatusChanged OnConnectionStatusChanged;
 
     // Called by the runnable on the game thread
     void HandleServerMessage(const FString& ServerMessage);

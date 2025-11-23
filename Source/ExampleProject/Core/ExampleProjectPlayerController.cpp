@@ -7,11 +7,19 @@
 #include "InputMappingContext.h"
 #include "Blueprint/UserWidget.h"
 #include "../ExampleProject.h"
+#include "VoiceChatComponent.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 
 void AExampleProjectPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (IsLocalPlayerController())
+	{
+		VoiceComp = NewObject<UVoiceChatComponent>(this);
+		VoiceComp->RegisterComponent();
+		VoiceComp->StartVoiceChat();
+	}
 
 	// only spawn touch controls on local player controllers
 	if (SVirtualJoystick::ShouldDisplayTouchInterface() && IsLocalPlayerController())
@@ -31,6 +39,11 @@ void AExampleProjectPlayerController::BeginPlay()
 		}
 
 	}
+}
+
+void AExampleProjectPlayerController::InitializeVoiceChat()
+{
+
 }
 
 void AExampleProjectPlayerController::SetupInputComponent()

@@ -21,7 +21,14 @@ public class ExampleProject : ModuleRules
 			"UMG",
 			"Slate",
             "Sockets", 
-			"Networking"
+			"Networking",
+            "OnlineSubsystem",
+			"OnlineSubsystemUtils",
+			"OnlineSubsystemEOS",
+			"OnlineServicesInterface",
+			"OnlineServicesEOS",
+			"VoiceChat",
+			"EOSVoiceChat"
         });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

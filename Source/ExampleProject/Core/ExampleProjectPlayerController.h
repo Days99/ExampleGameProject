@@ -8,6 +8,7 @@
 
 class UInputMappingContext;
 class UUserWidget;
+class UVoiceChatComponent;
 
 /**
  *  Basic PlayerController class for a third person game
@@ -17,6 +18,9 @@ UCLASS(abstract)
 class AExampleProjectPlayerController : public APlayerController
 {
 	GENERATED_BODY()
+
+public:
+	void InitializeVoiceChat();
 	
 protected:
 
@@ -34,6 +38,10 @@ protected:
 
 	/** Pointer to the mobile controls widget */
 	TObjectPtr<UUserWidget> MobileControlsWidget;
+
+	UVoiceChatComponent* VoiceComp;
+
+
 
 	/** Gameplay initialization */
 	virtual void BeginPlay() override;
