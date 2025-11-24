@@ -22,7 +22,7 @@ void AExampleProjectPlayerController::BeginPlay()
 	}
 
 	// only spawn touch controls on local player controllers
-	if (SVirtualJoystick::ShouldDisplayTouchInterface() && IsLocalPlayerController())
+	if (SVirtualJoystick::ShouldDisplayTouchInterface() && IsLocalPlayerController() && !HasAuthority())
 	{
 		// spawn the mobile controls widget
 		MobileControlsWidget = CreateWidget<UUserWidget>(this, MobileControlsWidgetClass);

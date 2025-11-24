@@ -93,7 +93,7 @@ void AMatchmakingLevelScript::OnSessionsUpdated(const TArray<FMatchSessionInfo>&
 void AMatchmakingLevelScript::OnHostRequested(FString IpAdress, int32 Port) {
     // Called when server accepted our host request
     if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) {
-        FString Cmd = FString::Printf(TEXT("open %s:%d"), IpAdress, Port);
+        FString Cmd = FString::Printf(TEXT("open %s:%d"), *IpAdress, Port);
         PC->ConsoleCommand(*Cmd);
     }
 }
