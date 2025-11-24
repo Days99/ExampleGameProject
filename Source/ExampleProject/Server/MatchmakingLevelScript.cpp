@@ -90,10 +90,10 @@ void AMatchmakingLevelScript::OnSessionsUpdated(const TArray<FMatchSessionInfo>&
     RebuildServerListUI();
 }
 
-void AMatchmakingLevelScript::OnHostRequested(int32 Port) {
+void AMatchmakingLevelScript::OnHostRequested(FString IpAdress, int32 Port) {
     // Called when server accepted our host request
     if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) {
-        FString Cmd = FString::Printf(TEXT("open Lvl_ThirdPerson?listen"));
+        FString Cmd = FString::Printf(TEXT("open %s:%d"), IpAdress, Port);
         PC->ConsoleCommand(*Cmd);
     }
 }

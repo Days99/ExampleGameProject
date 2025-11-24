@@ -36,7 +36,7 @@ protected:
     void OnSessionsUpdated(const TArray<FMatchSessionInfo>& Sessions);
 
     UFUNCTION()
-    void OnHostRequested(int32 Port);
+    void OnHostRequested(FString IpAdress, int32 Port);
 
     UFUNCTION()
     void OnConnectionStatusChanged(bool bIsConnected);

@@ -57,9 +57,10 @@ void UMatchmakingSubsystem::HandleServerMessage(const FString& ServerMessage) {
         // 'o|<port>|' indicates the server accepted host and gave us the port
         TArray<FString> Parts;
         ServerMessage.ParseIntoArray(Parts, TEXT("|"), true);
-        if (Parts.Num() > 1) {
-            int32 Port = FCString::Atoi(*Parts[1]);
-            OnHostRequested.Broadcast(Port);
+        if (Parts.Num() > 2) {
+			FString IpAdress = *Parts[1];
+            int32 Port = FCString::Atoi(*Parts[2]);
+            OnHostRequested.Broadcast(IpAdress, Port);
         }
     }
 }

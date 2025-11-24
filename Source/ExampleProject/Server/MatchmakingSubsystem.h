@@ -8,7 +8,7 @@
 #include "MatchmakingSubsystem.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMatchmakingSessionsUpdated, const TArray<FMatchSessionInfo>&, Sessions);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMatchmakingHostRequested, int32, Port);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnMatchmakingHostRequested, FString, IpAdress, int32, Port);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMatchmakingConnectionStatusChanged, bool, bIsConnected);
 
 class FTCPClientRunnable;
