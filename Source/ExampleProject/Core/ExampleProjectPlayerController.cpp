@@ -14,31 +14,6 @@ void AExampleProjectPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (IsLocalPlayerController())
-	{
-		VoiceComp = NewObject<UVoiceChatComponent>(this);
-		VoiceComp->RegisterComponent();
-		VoiceComp->StartVoiceChat();
-	}
-
-	// only spawn touch controls on local player controllers
-	if (SVirtualJoystick::ShouldDisplayTouchInterface() && IsLocalPlayerController() && !HasAuthority())
-	{
-		// spawn the mobile controls widget
-		MobileControlsWidget = CreateWidget<UUserWidget>(this, MobileControlsWidgetClass);
-
-		if (MobileControlsWidget)
-		{
-			// add the controls to the player screen
-			MobileControlsWidget->AddToPlayerScreen(0);
-
-		} else {
-
-			UE_LOG(LogExampleProject, Error, TEXT("Could not spawn mobile controls widget."));
-
-		}
-
-	}
 }
 
 void AExampleProjectPlayerController::InitializeVoiceChat()
