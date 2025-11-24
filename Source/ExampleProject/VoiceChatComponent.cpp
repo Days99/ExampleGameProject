@@ -23,7 +23,7 @@ void UVoiceChatComponent::BeginPlay()
 
     if (bAutoStartOnBeginPlay)
     {
-        StartVoiceChat();
+        //StartVoiceChat();
     }
 }
 
@@ -304,10 +304,10 @@ void UVoiceChatComponent::LeaveVoiceLobby()
 
 void UVoiceChatComponent::JoinVoiceChannel(const FString& ChannelName)
 {
-    if (!Voice || ChannelName.IsEmpty())
+    if (!VoiceUser || ChannelName.IsEmpty())
     {
         UE_LOG(LogTemp, Warning, TEXT("[VoiceChat] Unable to join voice channel (Voice=%p, Name=%s)"),
-            Voice,
+            VoiceUser,
             *ChannelName);
         return;
     }
@@ -315,7 +315,7 @@ void UVoiceChatComponent::JoinVoiceChannel(const FString& ChannelName)
     CurrentVoiceChannel = ChannelName;
 
     UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Joining voice channel: %s"), *ChannelName);
-    Voice->JoinChannel(
+    VoiceUser->JoinChannel(
         ChannelName,
         TEXT(""),
         EVoiceChatChannelType::NonPositional,
@@ -324,12 +324,6 @@ void UVoiceChatComponent::JoinVoiceChannel(const FString& ChannelName)
 
 void UVoiceChatComponent::JoinVoiceChannelForSession(FName SessionName)
 {
-    if (!bVoiceLoginSucceeded)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VoiceChat] JoinVoiceChannelForSession called before login complete"));
-        return;
-    }
-
     FString ChannelName = ManualChannelName;
 
     EnsureSessionInterface();
@@ -363,13 +357,13 @@ void UVoiceChatComponent::OnChannelJoinComplete(const FString& ChannelName, cons
 
 void UVoiceChatComponent::LeaveVoiceChannel(const FString& ChannelName)
 {
-    if (!Voice || ChannelName.IsEmpty())
+    if (!VoiceUser || ChannelName.IsEmpty())
     {
         return;
     }
 
     UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Leaving voice channel %s"), *ChannelName);
-    Voice->LeaveChannel(
+    VoiceUser->LeaveChannel(
         ChannelName,
         FOnVoiceChatChannelLeaveCompleteDelegate::CreateUObject(this, &UVoiceChatComponent::OnChannelLeaveComplete));
 }
@@ -448,7 +442,7 @@ void UVoiceChatComponent::EnsureSessionInterface()
 
 void UVoiceChatComponent::HostLobbyInternal()
 {
-    if (!EnsureVoiceReady("HostSession"))
+    if (!EnsureVoiceReady(TEXT("HostLobby")))
     {
         UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Could start session"));
     }
@@ -481,11 +475,15 @@ void UVoiceChatComponent::HostLobbyInternal()
         SessionInterface->ClearOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteHandle);
         UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Failed to start CreateSession"));
     }
+    else
+    {
+        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] CreateSession completed for %s"), *LobbySessionName.ToString());
+    }
 }
 
 void UVoiceChatComponent::FindLobbyInternal()
 {
-    if (!EnsureVoiceReady("JoinLobby"))
+    if (!EnsureVoiceReady(TEXT("FindLobby")))
     {
         UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Could start session"));
     }
@@ -601,6 +599,10 @@ void UVoiceChatComponent::OnFindSessionsComplete(bool bWasSuccessful)
         SessionInterface->ClearOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteHandle);
         UE_LOG(LogTemp, Error, TEXT("[VoiceChat] JoinSession request rejected"));
         ResetSessionSearch();
+    }
+    else
+    {
+        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] JoinSession completed for %s"), *LobbySessionName.ToString());
     }
 }
 
