@@ -18,6 +18,13 @@ void AExampleProjectPlayerController::BeginPlay()
 
 void AExampleProjectPlayerController::InitializeVoiceChat()
 {
+	if (IsLocalPlayerController() && !HasAuthority())
+	{
+		VoiceComp = NewObject<UVoiceChatComponent>(this);
+		VoiceComp->RegisterComponent();
+		VoiceComp->StartVoiceChat();
+	}
+
 
 }
 
