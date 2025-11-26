@@ -4,56 +4,77 @@
 
 #include "CoreMinimal.h"
 #include "Engine/LevelScriptActor.h"
-#include "MatchmakingSubsystem.h"
-#include "Server/MatchSessionInfo.h"
-#include <Components/ScrollBox.h>
+#include "MatchSessionInfo.h"
 #include "MatchmakingLevelScript.generated.h"
 
+class UUserWidget;
+class UMatchmakingSubsystem;
+class UScrollBox;
+
 /**
- * 
+ * Level script for managing matchmaking UI and interactions
  */
 UCLASS()
-class EXAMPLEPROJECT_API AMatchmakingLevelScript : public ALevelScriptActor
+class AMatchmakingLevelScript : public ALevelScriptActor
 {
     GENERATED_BODY()
 
-protected:
+public:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
+    // Widget class to spawn
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Matchmaking")
+    TSubclassOf<UUserWidget> MatchmakingWidgetClass;
+
+    // Auto-refresh interval in seconds
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Matchmaking")
+    float RefreshInterval = 5.0f;
+
+protected:
+    // Button callbacks
     UFUNCTION()
     void OnConnectClicked();
 
     UFUNCTION()
-    void RefreshSessionList();
-
-    UPROPERTY()
-    UMatchmakingSubsystem* MatchSubsystem;
-    UFUNCTION()
     void OnHostClicked();
 
+    UFUNCTION()
+    void OnJoinSessionClicked(int32 SessionId);
+
+    // Delegate callbacks from subsystem
     UFUNCTION()
     void OnSessionsUpdated(const TArray<FMatchSessionInfo>& Sessions);
 
     UFUNCTION()
-    void OnHostRequested(FString IpAdress, int32 Port);
+    void OnHostRequested(int32 SessionId, FString ServerIp, int32 ServerPort);
 
     UFUNCTION()
     void OnConnectionStatusChanged(bool bIsConnected);
 
-    UPROPERTY(EditDefaultsOnly, Category = "UI")  
-    TSubclassOf<class UUserWidget> MatchmakingWidgetClass;
+    UFUNCTION()
+    void OnJoinSuccess(int32 SessionId, FString ServerIp, int32 ServerPort);
 
-    // UI widgets references (as before)
-    UUserWidget* MatchmakingWidget;
-    UScrollBox* ServerListScrollBoxWidget;
+    UFUNCTION()
+    void OnServerError(FString ErrorCode);
 
+    // Timer callback
+    UFUNCTION()
+    void RefreshSessionList();
+
+    // UI rebuild
     void RebuildServerListUI();
 
-    // Refresh settings
-    UPROPERTY(EditDefaultsOnly, Category = "Matchmaking")
-    float RefreshInterval = 3.0f; // Refresh every 3 seconds
+private:
+    UPROPERTY()
+    UUserWidget* MatchmakingWidget;
 
-    // Timer handle for session refresh
+    UPROPERTY()
+    UMatchmakingSubsystem* MatchSubsystem;
+
+    UPROPERTY()
+    UScrollBox* ServerListScrollBoxWidget;
+
     FTimerHandle RefreshTimerHandle;
 };
+

@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "MatchmakingLevelScript.h"
+
 #include "Blueprint/UserWidget.h"
 #include "MatchmakingSubsystem.h"
 #include "Core/ServerButton.h"
@@ -22,13 +23,16 @@ void AMatchmakingLevelScript::BeginPlay() {
     if (UGameInstance* GI = GetGameInstance()) {
         MatchSubsystem = GI->GetSubsystem<UMatchmakingSubsystem>();
         if (MatchSubsystem) {
+            // Bind to subsystem delegates
             MatchSubsystem->OnSessionsUpdated.AddDynamic(this, &AMatchmakingLevelScript::OnSessionsUpdated);
             MatchSubsystem->OnHostRequested.AddDynamic(this, &AMatchmakingLevelScript::OnHostRequested);
             MatchSubsystem->OnConnectionStatusChanged.AddDynamic(this, &AMatchmakingLevelScript::OnConnectionStatusChanged);
+            MatchSubsystem->OnJoinSuccess.AddDynamic(this, &AMatchmakingLevelScript::OnJoinSuccess);
+            MatchSubsystem->OnServerError.AddDynamic(this, &AMatchmakingLevelScript::OnServerError);
         }
     }
 
-    // Create widget and connect buttons like before, but button callbacks call into subsystem
+    // Create widget and connect buttons
     if (MatchmakingWidgetClass) {
         MatchmakingWidget = CreateWidget<UUserWidget>(GetWorld(), MatchmakingWidgetClass);
         MatchmakingWidget->AddToViewport();
@@ -42,8 +46,8 @@ void AMatchmakingLevelScript::BeginPlay() {
             HostButton->SetIsEnabled(false);
         }
 
-            ServerListScrollBoxWidget = Cast<UScrollBox>(MatchmakingWidget->GetWidgetFromName(TEXT("MyScrollBox")));
-        }
+        ServerListScrollBoxWidget = Cast<UScrollBox>(MatchmakingWidget->GetWidgetFromName(TEXT("MyScrollBox")));
+    }
 }
 
 void AMatchmakingLevelScript::EndPlay(const EEndPlayReason::Type EndPlayReason) {
@@ -51,22 +55,22 @@ void AMatchmakingLevelScript::EndPlay(const EEndPlayReason::Type EndPlayReason) 
     if (RefreshTimerHandle.IsValid()) {
         GetWorldTimerManager().ClearTimer(RefreshTimerHandle);
     }
-    
+
     if (MatchSubsystem) {
         MatchSubsystem->OnSessionsUpdated.RemoveDynamic(this, &AMatchmakingLevelScript::OnSessionsUpdated);
         MatchSubsystem->OnHostRequested.RemoveDynamic(this, &AMatchmakingLevelScript::OnHostRequested);
         MatchSubsystem->OnConnectionStatusChanged.RemoveDynamic(this, &AMatchmakingLevelScript::OnConnectionStatusChanged);
+        MatchSubsystem->OnJoinSuccess.RemoveDynamic(this, &AMatchmakingLevelScript::OnJoinSuccess);
+        MatchSubsystem->OnServerError.RemoveDynamic(this, &AMatchmakingLevelScript::OnServerError);
     }
     Super::EndPlay(EndPlayReason);
 }
-
 
 void AMatchmakingLevelScript::RefreshSessionList() {
     if (MatchSubsystem) {
         UE_LOG(LogTemp, Log, TEXT("AMatchmakingLevelScript::RefreshSessionList - Timer triggered"));
         MatchSubsystem->RefreshSessionList();
     }
-
 }
 
 void AMatchmakingLevelScript::OnConnectClicked() {
@@ -80,28 +84,40 @@ void AMatchmakingLevelScript::OnConnectClicked() {
 
 void AMatchmakingLevelScript::OnHostClicked() {
     if (MatchSubsystem) {
-        // Example: instruct subsystem to host on port 7777 with name
-        MatchSubsystem->HostNewGame(TEXT("My test server"), 7777);
+        // FIXED: HostNewGame now only takes session name (no port parameter)
+        MatchSubsystem->HostNewGame(TEXT("My test server"));
+    }
+}
+
+void AMatchmakingLevelScript::OnJoinSessionClicked(int32 SessionId) {
+    if (MatchSubsystem) {
+        UE_LOG(LogTemp, Log, TEXT("Attempting to join session %d"), SessionId);
+        MatchSubsystem->JoinSession(SessionId);
     }
 }
 
 void AMatchmakingLevelScript::OnSessionsUpdated(const TArray<FMatchSessionInfo>& Sessions) {
     // Rebuild UI using Sessions array (safely on game thread)
+    UE_LOG(LogTemp, Log, TEXT("Sessions updated - Count: %d"), Sessions.Num());
     RebuildServerListUI();
 }
 
-void AMatchmakingLevelScript::OnHostRequested(FString IpAdress, int32 Port) {
-    // Called when server accepted our host request
+void AMatchmakingLevelScript::OnHostRequested(int32 SessionId, FString ServerIp, int32 ServerPort) {
+    // FIXED: Updated signature to match new delegate (SessionId, ServerIp, ServerPort)
+    UE_LOG(LogTemp, Warning, TEXT("Host request confirmed - SessionId: %d, IP: %s, Port: %d"),
+        SessionId, *ServerIp, ServerPort);
+
+    // Travel to the hosted server
     if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) {
-        FString Cmd = FString::Printf(TEXT("open %s:%d"), *IpAdress, Port);
+        FString Cmd = FString::Printf(TEXT("open %s:%d"), *ServerIp, ServerPort);
         PC->ConsoleCommand(*Cmd);
     }
 }
 
 void AMatchmakingLevelScript::OnConnectionStatusChanged(bool bIsConnected) {
-    UE_LOG(LogTemp, Warning, TEXT("AMatchmakingLevelScript::OnConnectionStatusChanged - Connected: %s"), 
+    UE_LOG(LogTemp, Warning, TEXT("AMatchmakingLevelScript::OnConnectionStatusChanged - Connected: %s"),
         bIsConnected ? TEXT("YES") : TEXT("NO"));
-    
+
     if (bIsConnected) {
         // Start the refresh timer now that we're connected
         if (!RefreshTimerHandle.IsValid()) {
@@ -125,6 +141,37 @@ void AMatchmakingLevelScript::OnConnectionStatusChanged(bool bIsConnected) {
     }
 }
 
+void AMatchmakingLevelScript::OnJoinSuccess(int32 SessionId, FString ServerIp, int32 ServerPort) {
+    // Called when server confirmed we successfully joined a session
+    UE_LOG(LogTemp, Warning, TEXT("Join confirmed - SessionId: %d, IP: %s, Port: %d"),
+        SessionId, *ServerIp, ServerPort);
+
+    // Travel to the game server
+    if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) {
+        FString Cmd = FString::Printf(TEXT("open %s:%d"), *ServerIp, ServerPort);
+        PC->ConsoleCommand(*Cmd);
+    }
+}
+
+void AMatchmakingLevelScript::OnServerError(FString ErrorCode) {
+    // Handle server errors
+    UE_LOG(LogTemp, Error, TEXT("Server error received: %s"), *ErrorCode);
+
+    // You could display this in UI
+    if (ErrorCode == TEXT("NoAvailablePorts")) {
+        UE_LOG(LogTemp, Error, TEXT("Server has no available ports to host a new session!"));
+        // Show error message to user in UI
+    }
+    else if (ErrorCode == TEXT("SessionNotFound")) {
+        UE_LOG(LogTemp, Error, TEXT("The session you're trying to join no longer exists!"));
+        // Refresh session list
+        RefreshSessionList();
+    }
+    else if (ErrorCode == TEXT("NotAuthorized")) {
+        UE_LOG(LogTemp, Error, TEXT("You're not authorized to perform this action!"));
+    }
+}
+
 void AMatchmakingLevelScript::RebuildServerListUI() {
     if (!ServerListScrollBoxWidget || !MatchSubsystem) return;
 
@@ -136,16 +183,38 @@ void AMatchmakingLevelScript::RebuildServerListUI() {
 
     // Fill with current sessions
     const TArray<FMatchSessionInfo>& Sessions = MatchSubsystem->GetSessions();
+
+    if (Sessions.Num() == 0) {
+        // Optionally show "No sessions available" message
+        UVerticalBox* Box = NewObject<UVerticalBox>(this);
+        ServerListScrollBoxWidget->AddChild(Box);
+
+        UTextBlock* EmptyText = NewObject<UTextBlock>(this);
+        EmptyText->SetText(FText::FromString(TEXT("No sessions available")));
+        Box->AddChildToVerticalBox(EmptyText);
+        return;
+    }
+
     for (const FMatchSessionInfo& SI : Sessions) {
         UVerticalBox* Box = NewObject<UVerticalBox>(this);
         ServerListScrollBoxWidget->AddChild(Box);
 
-        // Create a simple button widget for each entry (you probably have a UMyButton class)
+        // Create a server button widget for each entry
         UServerButton* ItemBtn = NewObject<UServerButton>(this);
         ItemBtn->SetSessionInfo(SI);
+
+        // Display session info with player count
+        FString DisplayText = FString::Printf(TEXT("%s (%d players) - %s:%d"),
+            *SI.Name, SI.PlayerCount, *SI.ServerIp, SI.ServerPort);
+
         UTextBlock* Txt = NewObject<UTextBlock>(this);
-        Txt->SetText(FText::FromString(SI.Name));
+        Txt->SetText(FText::FromString(DisplayText));
         ItemBtn->AddChild(Txt);
+
+        // Bind click event to join this session
+        ItemBtn->OnServerButtonClicked.AddDynamic(this, &AMatchmakingLevelScript::OnJoinSessionClicked);
+
         Box->AddChildToVerticalBox(ItemBtn);
     }
 }
+

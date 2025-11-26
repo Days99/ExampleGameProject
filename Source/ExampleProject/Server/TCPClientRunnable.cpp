@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-
 #include "Server/TCPClientRunnable.h"
+
 #include "Sockets.h"
 #include "SocketSubsystem.h"
 #include "IPAddress.h"
@@ -37,6 +37,7 @@ bool FTCPClientRunnable::Init() {
     // create socket
     Socket = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateSocket(NAME_Stream, TEXT("matchclient"), false);
     if (!Socket) return false;
+
     int32 NewSize = 0;
     Socket->SetReceiveBufferSize(1024, NewSize);
 
@@ -46,7 +47,7 @@ bool FTCPClientRunnable::Init() {
     InternetAddr->SetPort(8856);
 
     bConnected = Socket->Connect(*InternetAddr);
-    
+
     // Notify subsystem about connection status on game thread
     if (OwnerSubsystem.IsValid()) {
         TWeakObjectPtr<UMatchmakingSubsystem> WeakOwner = OwnerSubsystem;
@@ -55,14 +56,14 @@ bool FTCPClientRunnable::Init() {
             if (WeakOwner.IsValid()) {
                 WeakOwner->HandleConnectionStatusChanged(bConnectionSuccess);
             }
-        });
+            });
     }
-    
+
     return true;
 }
 
 uint32 FTCPClientRunnable::Run() {
-    // After connection, send initial 'g|#' to request sessions (unchanged from original)
+    // After connection, send initial 'g|#' to request sessions
     if (bConnected) {
         SendRawString(TEXT("g|#"));
     }
@@ -79,6 +80,7 @@ uint32 FTCPClientRunnable::Run() {
                 // Ensure null-terminated
                 Received[Read] = '\0';
                 FString ServerMessage = FString(UTF8_TO_TCHAR(reinterpret_cast<const char*>(Received.GetData())));
+
                 // marshal back to game thread
                 if (OwnerSubsystem.IsValid()) {
                     TWeakObjectPtr<UMatchmakingSubsystem> WeakOwner = OwnerSubsystem;
@@ -94,7 +96,6 @@ uint32 FTCPClientRunnable::Run() {
             FPlatformProcess::Sleep(0.05f);
         }
     }
-
     return 0;
 }
 
@@ -104,20 +105,20 @@ void FTCPClientRunnable::Stop() {
 
 void FTCPClientRunnable::SendRawString(const FString& Message) {
     if (!Socket) return;
+
     // guard send with mutex to be safe if called from different threads
     FScopeLock Lock(&SendMutex);
+
     FTCHARToUTF8 Converter(*Message);
     int32 BytesSent = 0;
     Socket->Send((uint8*)Converter.Get(), Converter.Length(), BytesSent);
 }
 
-void FTCPClientRunnable::HostNewGame(const FString& Name, int32 Port) {
+void FTCPClientRunnable::HostNewGame(const FString& Name) {
     if (!Socket) return;
-    // Obtain local ip
-    bool bCanBind = false;
-    TSharedRef<FInternetAddr> LocalAddr = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->GetLocalHostAddr(*GLog, bCanBind);
-    FString LocalIp = LocalAddr->ToString(false);
-    FString Serialized = FString::Printf(TEXT("h|%s|%s|%d|#"), *Name, *LocalIp, Port);
+
+    // Format: h|sessionname|#
+    FString Serialized = FString::Printf(TEXT("h|%s|#"), *Name);
     SendRawString(Serialized);
 }
 
@@ -125,3 +126,27 @@ void FTCPClientRunnable::RequestSessionList() {
     if (!Socket || !bConnected) return;
     SendRawString(TEXT("g|#"));
 }
+
+void FTCPClientRunnable::JoinSession(int32 SessionId) {
+    if (!Socket || !bConnected) return;
+
+    // Format: j|sessionid|#
+    FString Message = FString::Printf(TEXT("j|%d|#"), SessionId);
+    SendRawString(Message);
+}
+
+void FTCPClientRunnable::DisconnectFromSession() {
+    if (!Socket || !bConnected) return;
+
+    // Format: d|#
+    SendRawString(TEXT("d|#"));
+}
+
+void FTCPClientRunnable::ShutdownSession(int32 SessionId) {
+    if (!Socket || !bConnected) return;
+
+    // Format: k|sessionid|#
+    FString Message = FString::Printf(TEXT("k|%d|#"), SessionId);
+    SendRawString(Message);
+}
+

@@ -4,14 +4,17 @@
 
 #include "CoreMinimal.h"
 #include "HAL/Runnable.h"
-#include "HAL/RunnableThread.h"
 #include "Templates/SharedPointer.h"
 
+
+class FSocket;
 class UMatchmakingSubsystem;
 
-// Minimal TCP client runnable. Uses UE sockets. Keeps owner as a weak pointer and
-// always marshals messages back to game thread using AsyncTask.
-class FTCPClientRunnable : public FRunnable {
+/**
+ * TCP Client Runnable for connecting to matchmaking server
+ */
+class FTCPClientRunnable : public FRunnable
+{
 public:
     FTCPClientRunnable(UMatchmakingSubsystem* InOwner);
     virtual ~FTCPClientRunnable();
@@ -21,20 +24,24 @@ public:
     virtual uint32 Run() override;
     virtual void Stop() override;
 
-    // Control API
-    void HostNewGame(const FString& Name, int32 Port);
-    void RequestSessionList();
+    // Connection status
     bool IsConnected() const { return bConnected; }
 
+    // Send commands to server
+    void HostNewGame(const FString& Name);
+    void RequestSessionList();
+    void JoinSession(int32 SessionId);
+    void DisconnectFromSession();
+    void ShutdownSession(int32 SessionId);
+
 private:
+    void SendRawString(const FString& Message);
+
     FRunnableThread* Thread;
     FSocket* Socket;
     FThreadSafeBool bRun;
     FThreadSafeBool bConnected;
-
     TWeakObjectPtr<UMatchmakingSubsystem> OwnerSubsystem;
-
     FCriticalSection SendMutex;
-
-    void SendRawString(const FString& Message);
 };
+

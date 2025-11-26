@@ -1,4 +1,5 @@
 // Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -7,14 +8,35 @@
 #include "MatchSessionInfo.h"
 #include "MatchmakingSubsystem.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMatchmakingSessionsUpdated, const TArray<FMatchSessionInfo>&, Sessions);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnMatchmakingHostRequested, FString, IpAdress, int32, Port);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMatchmakingConnectionStatusChanged, bool, bIsConnected);
-
 class FTCPClientRunnable;
 
+// Delegate for when session list is updated
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSessionsUpdated, const TArray<FMatchSessionInfo>&, Sessions);
+
+// Delegate for when host request is confirmed by server
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnHostRequested, int32, SessionId, FString, ServerIp, int32, ServerPort);
+
+// Delegate for when connection status changes
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnConnectionStatusChanged, bool, bIsConnected);
+
+// Delegate for when join is successful
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnJoinSuccess, int32, SessionId, FString, ServerIp, int32, ServerPort);
+
+// Delegate for when disconnect is confirmed
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDisconnectSuccess);
+
+// Delegate for when session shutdown is confirmed
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnShutdownSuccess, int32, SessionId);
+
+// Delegate for when server sends an error
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnServerError, FString, ErrorCode);
+
+/**
+ * Game Instance Subsystem for managing matchmaking connection
+ */
 UCLASS()
-class EXAMPLEPROJECT_API UMatchmakingSubsystem : public UGameInstanceSubsystem {
+class EXAMPLEPROJECT_API UMatchmakingSubsystem : public UGameInstanceSubsystem
+{
     GENERATED_BODY()
 
 public:
@@ -22,42 +44,74 @@ public:
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
     virtual void Deinitialize() override;
 
-    // Public API
-    UFUNCTION(BlueprintCallable)
+    // Connect to matchmaking server
+    UFUNCTION(BlueprintCallable, Category = "Matchmaking")
     void ConnectToMatchmakingServer();
 
-    UFUNCTION(BlueprintCallable)
-    void HostNewGame(const FString& Name, int32 Port);
+    // Host a new game session
+    UFUNCTION(BlueprintCallable, Category = "Matchmaking")
+    void HostNewGame(const FString& Name);
 
-    UFUNCTION(BlueprintCallable)
+    // Refresh the session list
+    UFUNCTION(BlueprintCallable, Category = "Matchmaking")
     void RefreshSessionList();
 
-    UFUNCTION(BlueprintCallable)
+    // Join an existing session
+    UFUNCTION(BlueprintCallable, Category = "Matchmaking")
+    void JoinSession(int32 SessionId);
+
+    // Disconnect from current session
+    UFUNCTION(BlueprintCallable, Category = "Matchmaking")
+    void DisconnectFromSession();
+
+    // Shutdown a session (only host can do this)
+    UFUNCTION(BlueprintCallable, Category = "Matchmaking")
+    void ShutdownSession(int32 SessionId);
+
+    // Check if connected to matchmaking server
+    UFUNCTION(BlueprintCallable, Category = "Matchmaking")
     bool IsConnected() const;
 
+    // Get current session list
+    UFUNCTION(BlueprintCallable, Category = "Matchmaking")
     const TArray<FMatchSessionInfo>& GetSessions() const { return Sessions; }
 
-    UPROPERTY(BlueprintAssignable)
-    FOnMatchmakingSessionsUpdated OnSessionsUpdated;
-
-    UPROPERTY(BlueprintAssignable)
-    FOnMatchmakingHostRequested OnHostRequested;
-
-    UPROPERTY(BlueprintAssignable)
-    FOnMatchmakingConnectionStatusChanged OnConnectionStatusChanged;
-
-    // Called by the runnable on the game thread
+    // Called by TCP runnable when server message is received
     void HandleServerMessage(const FString& ServerMessage);
-    
-    // Called by the runnable when connection status changes
+
+    // Called by TCP runnable when connection status changes
     void HandleConnectionStatusChanged(bool bIsConnected);
 
+    // Delegates
+    UPROPERTY(BlueprintAssignable, Category = "Matchmaking")
+    FOnSessionsUpdated OnSessionsUpdated;
+
+    UPROPERTY(BlueprintAssignable, Category = "Matchmaking")
+    FOnHostRequested OnHostRequested;
+
+    UPROPERTY(BlueprintAssignable, Category = "Matchmaking")
+    FOnConnectionStatusChanged OnConnectionStatusChanged;
+
+    UPROPERTY(BlueprintAssignable, Category = "Matchmaking")
+    FOnJoinSuccess OnJoinSuccess;
+
+    UPROPERTY(BlueprintAssignable, Category = "Matchmaking")
+    FOnDisconnectSuccess OnDisconnectSuccess;
+
+    UPROPERTY(BlueprintAssignable, Category = "Matchmaking")
+    FOnShutdownSuccess OnShutdownSuccess;
+
+    UPROPERTY(BlueprintAssignable, Category = "Matchmaking")
+    FOnServerError OnServerError;
+
 private:
-    // Owned runnable that talks to the matchmaking server
-    FTCPClientRunnable* ClientRunnable = nullptr;
-    // Stored sessions (value types)
+    // Parse session list from server message
+    void ParseAndSetSessions(const FString& ServerMessage);
+
+    FTCPClientRunnable* ClientRunnable;
     TArray<FMatchSessionInfo> Sessions;
 
-    // Helpers
-    void ParseAndSetSessions(const FString& ServerMessage);
+    // Track current session info
+    int32 CurrentSessionId = -1;
 };
+
