@@ -11,25 +11,25 @@
 class FTCPClientRunnable;
 
 // Delegate for when session list is updated
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSessionsUpdated, const TArray<FMatchSessionInfo>&, Sessions);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FMatchmakingOnSessionsUpdated, const TArray<FMatchSessionInfo>&, Sessions);
 
 // Delegate for when host request is confirmed by server
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnHostRequested, int32, SessionId, FString, ServerIp, int32, ServerPort);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FMatchmakingOnHostRequested, int32, SessionId, FString, ServerIp, int32, ServerPort);
 
 // Delegate for when connection status changes
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnConnectionStatusChanged, bool, bIsConnected);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FMatchmakingOnConnectionStatusChanged, bool, bIsConnected);
 
 // Delegate for when join is successful
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnJoinSuccess, int32, SessionId, FString, ServerIp, int32, ServerPort);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FMatchmakingOnJoinSuccess, int32, SessionId, FString, ServerIp, int32, ServerPort);
 
 // Delegate for when disconnect is confirmed
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDisconnectSuccess);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FMatchmakingOnDisconnectSuccess);
 
 // Delegate for when session shutdown is confirmed
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnShutdownSuccess, int32, SessionId);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FMatchmakingOnShutdownSuccess, int32, SessionId);
 
 // Delegate for when server sends an error
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnServerError, FString, ErrorCode);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FMatchmakingOnServerError, FString, ErrorCode);
 
 /**
  * Game Instance Subsystem for managing matchmaking connection
@@ -84,25 +84,25 @@ public:
 
     // Delegates
     UPROPERTY(BlueprintAssignable, Category = "Matchmaking")
-    FOnSessionsUpdated OnSessionsUpdated;
+    FMatchmakingOnSessionsUpdated OnSessionsUpdated;
 
     UPROPERTY(BlueprintAssignable, Category = "Matchmaking")
-    FOnHostRequested OnHostRequested;
+    FMatchmakingOnHostRequested OnHostRequested;
 
     UPROPERTY(BlueprintAssignable, Category = "Matchmaking")
-    FOnConnectionStatusChanged OnConnectionStatusChanged;
+    FMatchmakingOnConnectionStatusChanged OnConnectionStatusChanged;
 
     UPROPERTY(BlueprintAssignable, Category = "Matchmaking")
-    FOnJoinSuccess OnJoinSuccess;
+    FMatchmakingOnJoinSuccess OnJoinSuccess;
 
     UPROPERTY(BlueprintAssignable, Category = "Matchmaking")
-    FOnDisconnectSuccess OnDisconnectSuccess;
+    FMatchmakingOnDisconnectSuccess OnDisconnectSuccess;
 
     UPROPERTY(BlueprintAssignable, Category = "Matchmaking")
-    FOnShutdownSuccess OnShutdownSuccess;
+    FMatchmakingOnShutdownSuccess OnShutdownSuccess;
 
     UPROPERTY(BlueprintAssignable, Category = "Matchmaking")
-    FOnServerError OnServerError;
+    FMatchmakingOnServerError OnServerError;
 
 private:
     // Parse session list from server message
