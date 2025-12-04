@@ -13,12 +13,17 @@
 void AExampleProjectPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
-
+	if (IsLocalPlayerController())
+	{
+		VoiceComp = NewObject<UVoiceChatComponent>(this);
+		VoiceComp->RegisterComponent();
+		VoiceComp->StartVoiceChat();
+	}
 }
 
 void AExampleProjectPlayerController::InitializeVoiceChat()
 {
-	if (IsLocalPlayerController() && !HasAuthority())
+	if (IsLocalPlayerController())
 	{
 		VoiceComp = NewObject<UVoiceChatComponent>(this);
 		VoiceComp->RegisterComponent();
