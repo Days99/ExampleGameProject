@@ -205,8 +205,10 @@ void AExampleProjectGameMode::OnVoiceCredentialsReady(const FString& ProductUser
 		if (Credentials.bIsValid)
 		{
 			// Send credentials to client
-			UE_LOG(LogTemp, Log, TEXT("[GameMode] Sending voice credentials to client: Channel=%s, Token=%s"), 
-				*Credentials.RoomName, *Credentials.ParticipantToken);
+			UE_LOG(LogTemp, Log, TEXT("[GameMode] Sending voice credentials to client: Channel=%s, Token=%s (len=%d)"),
+				*Credentials.RoomName,
+				Credentials.ParticipantToken.IsEmpty() ? TEXT("None") : TEXT("Provided"),
+				Credentials.ParticipantToken.Len());
 			PC->Client_ReceiveVoiceCredentials(Credentials.RoomName, Credentials.ParticipantToken);
 		}
 		else

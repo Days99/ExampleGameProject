@@ -31,7 +31,9 @@ public class ExampleProject : ModuleRules
 			"EOSVoiceChat"
         });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] {
+			"EOSSDK"
+		});
 
 		PublicIncludePaths.AddRange(new string[] {
 			"ExampleProject",
