@@ -25,12 +25,22 @@ void UVoiceChatComponent::BeginPlay()
 
 void UVoiceChatComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    if (bAutoLeaveOnDestroy && !CurrentChannel.IsEmpty())
+    if (VoiceChat && VoiceUser)
     {
-        LeaveChannel();
+        VoiceChat->ReleaseUser(VoiceUser);
+        VoiceUser = nullptr;
     }
 
-    Cleanup();
+    if (!GIsEditor && VoiceChat)
+    {
+        VoiceChat->Disconnect(FOnVoiceChatDisconnectCompleteDelegate::CreateLambda([](const FVoiceChatResult&) {}));
+        VoiceChat->Uninitialize();
+    }
+
+    VoiceChat = nullptr;
+    bIsReady = false;
+    bIsInitializing = false;
+    CurrentChannel.Empty();
     Super::EndPlay(EndPlayReason);
 }
 
@@ -490,19 +500,20 @@ void UVoiceChatComponent::OnChannelLeaveComplete(const FString& ChannelName, con
 
 void UVoiceChatComponent::Cleanup()
 {
-    if (VoiceUser)
+    // Deprecated by EndPlay teardown logic; kept for safety if called elsewhere.
+    if (VoiceChat && VoiceUser)
     {
-        VoiceUser->Logout(FOnVoiceChatLogoutCompleteDelegate::CreateLambda([](const FString&, const FVoiceChatResult&) {}));
+        VoiceChat->ReleaseUser(VoiceUser);
         VoiceUser = nullptr;
     }
 
-    if (VoiceChat)
+    if (!GIsEditor && VoiceChat)
     {
         VoiceChat->Disconnect(FOnVoiceChatDisconnectCompleteDelegate::CreateLambda([](const FVoiceChatResult&) {}));
         VoiceChat->Uninitialize();
-        VoiceChat = nullptr;
     }
 
+    VoiceChat = nullptr;
     bIsReady = false;
     bIsInitializing = false;
     CurrentChannel.Empty();

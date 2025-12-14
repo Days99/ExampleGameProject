@@ -84,22 +84,6 @@ void AExampleProjectGameMode::PostLogin(APlayerController* NewPlayer)
 		*NewPlayer->GetName(), ActorCount);
 	UE_LOG(LogTemp, Warning, TEXT("========================================"));
 
-	// Request voice credentials for new player
-	if (HasAuthority() && VoiceRoomManager)
-	{
-		// Wait a moment for player's voice component to initialize, then request credentials
-		FTimerHandle VoiceCredsTimer;
-		FTimerDelegate VoiceCredsDelegate;
-		VoiceCredsDelegate.BindLambda([this, NewPlayer]()
-		{
-			if (AExampleProjectPlayerController* PC = Cast<AExampleProjectPlayerController>(NewPlayer))
-			{
-				// Player will request credentials via RPC when voice is ready
-				// This is handled in PlayerController's Server_RequestVoiceCredentials
-			}
-		});
-		GetWorldTimerManager().SetTimer(VoiceCredsTimer, VoiceCredsDelegate, 2.0f, false);
-	}
 }
 
 void AExampleProjectGameMode::RespawnPlayer(AController* Controller)
