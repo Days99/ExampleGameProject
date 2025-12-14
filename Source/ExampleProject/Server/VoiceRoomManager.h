@@ -37,7 +37,6 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnVoiceCredentialsReady, const FSt
  * Server-side manager for voice credentials (Trusted Server method).
  * 
  * NOTE: Requires server credentials with RTC Admin permissions from EOS Dev Portal.
- * Currently returns invalid credentials as placeholder.
  */
 UCLASS(BlueprintType, Blueprintable)
 class EXAMPLEPROJECT_API AVoiceRoomManager : public AActor
