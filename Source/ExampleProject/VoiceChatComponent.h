@@ -100,6 +100,10 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice Chat")
     FString MainChannelName = TEXT("MainChannel");
 
+    /** TESTING: Join as Echo so you can hear yourself without another client */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice Chat|Testing")
+    bool bJoinAsEchoForTesting = true;
+
     /** Auto-leave channel on destroy */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice Chat")
     bool bAutoLeaveOnDestroy = true;

@@ -85,7 +85,11 @@ void UVoiceChatComponent::JoinChannel(const FString& ChannelName, const FString&
 
     CurrentChannel = ChannelName;
 
-    EVoiceChatChannelType ChannelType = bPositional ? EVoiceChatChannelType::Positional : EVoiceChatChannelType::NonPositional;
+    // For quick testing, Echo lets you verify capture/playback with a single client.
+    // You can disable this in the component details panel (bJoinAsEchoForTesting).
+    EVoiceChatChannelType ChannelType =
+        bJoinAsEchoForTesting ? EVoiceChatChannelType::Echo :
+        (bPositional ? EVoiceChatChannelType::Positional : EVoiceChatChannelType::NonPositional);
 
     UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Joining channel: %s (Token: %s)"), 
         *ChannelName, 
