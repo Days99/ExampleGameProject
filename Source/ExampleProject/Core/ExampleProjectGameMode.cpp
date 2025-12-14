@@ -9,11 +9,47 @@
 #include "ExampleProjectPlayerController.h"
 #include "EngineUtils.h"
 #include "../Gameplay/PhysicsReplicatedActor.h"
+#include "Server/VoiceRoomManager.h"
 
 AExampleProjectGameMode::AExampleProjectGameMode()
 {
 	// Set default respawn delay
 	RespawnDelay = 3.0f;
+	VoiceRoomManager = nullptr;
+}
+
+void AExampleProjectGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
+{
+	Super::InitGame(MapName, Options, ErrorMessage);
+	
+	// Initialize voice manager on server
+	if (HasAuthority())
+	{
+		InitializeVoiceManager();
+	}
+}
+
+void AExampleProjectGameMode::InitializeVoiceManager()
+{
+	if (!HasAuthority() || VoiceRoomManager)
+	{
+		return;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[GameMode] Initializing Voice Room Manager..."));
+
+	// Spawn voice room manager
+	VoiceRoomManager = GetWorld()->SpawnActor<AVoiceRoomManager>();
+	if (VoiceRoomManager)
+	{
+		// Bind to credentials ready event
+		VoiceRoomManager->OnVoiceCredentialsReady.AddDynamic(this, &AExampleProjectGameMode::OnVoiceCredentialsReady);
+		UE_LOG(LogTemp, Log, TEXT("[GameMode] Voice Room Manager initialized"));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("[GameMode] Failed to spawn Voice Room Manager"));
+	}
 }
 
 void AExampleProjectGameMode::PostLogin(APlayerController* NewPlayer)
@@ -47,6 +83,23 @@ void AExampleProjectGameMode::PostLogin(APlayerController* NewPlayer)
 	UE_LOG(LogTemp, Warning, TEXT("Total PhysicsReplicatedActors owned by %s: %d"), 
 		*NewPlayer->GetName(), ActorCount);
 	UE_LOG(LogTemp, Warning, TEXT("========================================"));
+
+	// Request voice credentials for new player
+	if (HasAuthority() && VoiceRoomManager)
+	{
+		// Wait a moment for player's voice component to initialize, then request credentials
+		FTimerHandle VoiceCredsTimer;
+		FTimerDelegate VoiceCredsDelegate;
+		VoiceCredsDelegate.BindLambda([this, NewPlayer]()
+		{
+			if (AExampleProjectPlayerController* PC = Cast<AExampleProjectPlayerController>(NewPlayer))
+			{
+				// Player will request credentials via RPC when voice is ready
+				// This is handled in PlayerController's Server_RequestVoiceCredentials
+			}
+		});
+		GetWorldTimerManager().SetTimer(VoiceCredsTimer, VoiceCredsDelegate, 2.0f, false);
+	}
 }
 
 void AExampleProjectGameMode::RespawnPlayer(AController* Controller)
@@ -112,4 +165,53 @@ void AExampleProjectGameMode::RespawnPlayer_Internal(AController* Controller)
 	PendingRespawns.Remove(Controller);
 
 	UE_LOG(LogTemp, Warning, TEXT("Player %s respawned successfully"), *Controller->GetName());
+}
+
+void AExampleProjectGameMode::RequestVoiceCredentialsForPlayer(APlayerController* PlayerController, const FString& ProductUserId)
+{
+	if (!HasAuthority() || !VoiceRoomManager || !PlayerController)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[GameMode] Cannot request voice credentials - invalid state"));
+		return;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[GameMode] Requesting voice credentials for player %s (ProductUserId: %s)"), 
+		*PlayerController->GetName(), *ProductUserId);
+
+	// Store player controller for when credentials are ready
+	PendingVoiceRequests.Add(ProductUserId, PlayerController);
+
+	// Request credentials from voice room manager
+	VoiceRoomManager->AutoAssignMainChannel(ProductUserId, MainVoiceChannelName);
+}
+
+void AExampleProjectGameMode::OnVoiceCredentialsReady(const FString& ProductUserId, FVoiceRoomCredentials Credentials)
+{
+	UE_LOG(LogTemp, Log, TEXT("[GameMode] Voice credentials ready for ProductUserId: %s"), *ProductUserId);
+
+	// Find the player controller that requested these credentials
+	APlayerController** FoundPC = PendingVoiceRequests.Find(ProductUserId);
+	if (!FoundPC || !*FoundPC)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[GameMode] No pending request found for ProductUserId: %s"), *ProductUserId);
+		return;
+	}
+
+	APlayerController* PlayerController = *FoundPC;
+	PendingVoiceRequests.Remove(ProductUserId);
+
+	if (AExampleProjectPlayerController* PC = Cast<AExampleProjectPlayerController>(PlayerController))
+	{
+		if (Credentials.bIsValid)
+		{
+			// Send credentials to client
+			UE_LOG(LogTemp, Log, TEXT("[GameMode] Sending voice credentials to client: Channel=%s, Token=%s"), 
+				*Credentials.RoomName, *Credentials.ParticipantToken);
+			PC->Client_ReceiveVoiceCredentials(Credentials.RoomName, Credentials.ParticipantToken);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("[GameMode] Invalid credentials received for ProductUserId: %s"), *ProductUserId);
+		}
+	}
 }

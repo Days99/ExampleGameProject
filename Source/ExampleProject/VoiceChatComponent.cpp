@@ -1,16 +1,12 @@
 // VoiceChatComponent.cpp
+// Simplified EOS Voice Chat for Trusted Server Method
+// Based on EOSIntegrationKit pattern: https://github.com/betidestudio/EOSIntegrationKit
+
 #include "VoiceChatComponent.h"
-
-#include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
-#include "GameFramework/PlayerController.h"
 #include "OnlineSubsystem.h"
-#include "OnlineSubsystemTypes.h"
-
-namespace VoiceChatComponentInternal
-{
-    static const FName VoiceLobbyFlag(TEXT("VOICE_LOBBY"));
-}
+#include "Interfaces/OnlineIdentityInterface.h"
+#include "Core/ExampleProjectPlayerController.h"
 
 UVoiceChatComponent::UVoiceChatComponent()
 {
@@ -21,132 +17,203 @@ void UVoiceChatComponent::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (bAutoStartOnBeginPlay)
+    if (bAutoInitialize)
     {
-        //StartVoiceChat();
+        Initialize();
     }
 }
 
 void UVoiceChatComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    if (bTearDownSessionOnEndPlay)
+    if (bAutoLeaveOnDestroy && !CurrentChannel.IsEmpty())
     {
-        LeaveVoiceLobby();
-    }
-    else if (bLeaveVoiceOnDestroy && !CurrentVoiceChannel.IsEmpty())
-    {
-        LeaveVoiceChannel(CurrentVoiceChannel);
+        LeaveChannel();
     }
 
-    CleanupDelegates();
-
-    if (VoiceUser)
-    {
-        VoiceUser->Logout(FOnVoiceChatLogoutCompleteDelegate::CreateUObject(this, &UVoiceChatComponent::OnVoiceLogoutComplete));
-        VoiceUser = nullptr;
-    }
-
-    if (Voice && bVoiceInitialized)
-    {
-        Voice->Uninitialize();
-    }
-
-    Voice = nullptr;
-    bVoiceInitialized = false;
-    bVoiceLoginSucceeded = false;
-    bEOSLoginInProgress = false;
-
-    SessionInterface.Reset();
-    ResetSessionSearch();
-
+    Cleanup();
     Super::EndPlay(EndPlayReason);
 }
 
-void UVoiceChatComponent::StartVoiceChat()
+//////////////////////////////////////////////////////////////////////////
+// Public API
+//////////////////////////////////////////////////////////////////////////
+
+void UVoiceChatComponent::Initialize()
 {
-    if (bVoiceLoginSucceeded)
+    if (bIsReady)
     {
-        HandleAutoLobbyAction();
+        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Already initialized"));
+        OnReady.Broadcast();
         return;
     }
 
-    if (bEOSLoginInProgress)
+    if (bIsInitializing)
     {
+        UE_LOG(LogTemp, Warning, TEXT("[VoiceChat] Already initializing"));
         return;
     }
 
-    if (PlayerName.IsEmpty())
-    {
-        if (const APlayerController* PC = Cast<APlayerController>(GetOwner()))
-        {
-            if (const ULocalPlayer* LocalPlayer = PC->GetLocalPlayer())
-            {
-                PlayerName = LocalPlayer->GetNickname();
-                if (PlayerName.IsEmpty())
-                {
-                    PlayerName = LocalPlayer->GetName();
-                }
-            }
-        }
-    }
+    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] ======================================"));
+    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Initializing Voice Chat System"));
+    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] ======================================"));
 
-    if (PlayerName.IsEmpty())
-    {
-        PlayerName = TEXT("Player");
-    }
-
-    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Starting initialization for %s"), *PlayerName);
-
-    bEOSLoginInProgress = true;
-    LoginToEOS();
+    bIsInitializing = true;
+    AuthenticateEOS();
 }
 
-void UVoiceChatComponent::LoginToEOS()
+void UVoiceChatComponent::JoinChannel(const FString& ChannelName, const FString& Token, bool bPositional)
+{
+    if (!bIsReady || !VoiceUser)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Cannot join channel - voice not ready"));
+        OnChannelJoined.Broadcast(ChannelName, false);
+        return;
+    }
+
+    if (ChannelName.IsEmpty())
+    {
+        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Channel name cannot be empty"));
+        OnChannelJoined.Broadcast(ChannelName, false);
+        return;
+    }
+
+    // Leave current channel if different
+    if (!CurrentChannel.IsEmpty() && CurrentChannel != ChannelName)
+    {
+        LeaveChannel();
+    }
+
+    CurrentChannel = ChannelName;
+
+    EVoiceChatChannelType ChannelType = bPositional ? EVoiceChatChannelType::Positional : EVoiceChatChannelType::NonPositional;
+
+    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Joining channel: %s (Token: %s)"), 
+        *ChannelName, 
+        Token.IsEmpty() ? TEXT("None") : TEXT("Provided"));
+
+    VoiceUser->JoinChannel(
+        ChannelName,
+        Token,
+        ChannelType,
+        FOnVoiceChatChannelJoinCompleteDelegate::CreateUObject(this, &UVoiceChatComponent::OnChannelJoinComplete)
+    );
+}
+
+void UVoiceChatComponent::LeaveChannel()
+{
+    if (CurrentChannel.IsEmpty() || !VoiceUser)
+    {
+        return;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Leaving channel: %s"), *CurrentChannel);
+
+    VoiceUser->LeaveChannel(
+        CurrentChannel,
+        FOnVoiceChatChannelLeaveCompleteDelegate::CreateUObject(this, &UVoiceChatComponent::OnChannelLeaveComplete)
+    );
+}
+
+void UVoiceChatComponent::SetMuted(bool bMuted)
+{
+    bIsMuted = bMuted;
+    if (VoiceUser)
+    {
+        VoiceUser->SetAudioInputDeviceMuted(bMuted);
+        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Mute: %s"), bMuted ? TEXT("ON") : TEXT("OFF"));
+    }
+}
+
+bool UVoiceChatComponent::IsMuted() const
+{
+    return VoiceUser ? VoiceUser->GetAudioInputDeviceMuted() : bIsMuted;
+}
+
+void UVoiceChatComponent::SetInputVolume(float Volume)
+{
+    if (VoiceUser)
+    {
+        VoiceUser->SetAudioInputVolume(FMath::Clamp(Volume, 0.0f, 1.0f));
+    }
+}
+
+void UVoiceChatComponent::SetOutputVolume(float Volume)
+{
+    if (VoiceUser)
+    {
+        VoiceUser->SetAudioOutputVolume(FMath::Clamp(Volume, 0.0f, 1.0f));
+    }
+}
+
+FString UVoiceChatComponent::GetProductUserId() const
+{
+    // Extract just the ProductUserId part (after the pipe if present)
+    // EOS format can be: "AccountId|ProductUserId" or just "ProductUserId"
+    // Server needs just the ProductUserId part for EOS_RTCAdmin_QueryJoinRoomToken
+    int32 PipeIndex;
+    if (ProductUserId.FindChar(TEXT('|'), PipeIndex))
+    {
+        return ProductUserId.Mid(PipeIndex + 1);
+    }
+    return ProductUserId;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// EOS Authentication
+//////////////////////////////////////////////////////////////////////////
+
+void UVoiceChatComponent::AuthenticateEOS()
 {
     IOnlineSubsystem* OSS = IOnlineSubsystem::Get();
     if (!OSS)
     {
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] OnlineSubsystem not found"));
-        bEOSLoginInProgress = false;
+        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] OnlineSubsystem not available"));
+        bIsInitializing = false;
         return;
     }
 
     IOnlineIdentityPtr Identity = OSS->GetIdentityInterface();
     if (!Identity.IsValid())
     {
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Identity interface invalid"));
-        bEOSLoginInProgress = false;
+        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Identity interface not available"));
+        bIsInitializing = false;
         return;
     }
 
+    // Check if already authenticated
     if (Identity->GetLoginStatus(0) == ELoginStatus::LoggedIn)
     {
-        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Already logged into EOS"));
-        bEOSLoginInProgress = false;
+        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Already authenticated with EOS"));
+        EOSUserId = Identity->GetUniquePlayerId(0);
+        if (EOSUserId.IsValid())
+        {
+            ProductUserId = EOSUserId->ToString();
+        }
         InitializeVoiceChat();
         return;
     }
 
+    // Authenticate with Account Portal
     FOnlineAccountCredentials Credentials;
     Credentials.Type = TEXT("accountportal");
     Credentials.Id = FString();
     Credentials.Token = FString();
 
-    Identity->OnLoginCompleteDelegates->AddUObject(this, &UVoiceChatComponent::OnEOSLoginComplete);
+    Identity->OnLoginCompleteDelegates->AddUObject(this, &UVoiceChatComponent::OnEOSAuthComplete);
 
-    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Attempting EOS login..."));
+    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Authenticating with EOS (Account Portal)..."));
+
     if (!Identity->Login(0, Credentials))
     {
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Identity->Login returned false immediately"));
+        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Login request failed"));
         Identity->OnLoginCompleteDelegates->RemoveAll(this);
-        bEOSLoginInProgress = false;
+        bIsInitializing = false;
     }
 }
 
-void UVoiceChatComponent::OnEOSLoginComplete(int32 LocalUserNum, bool bWasSuccessful, const FUniqueNetId& UserId, const FString& Error)
+void UVoiceChatComponent::OnEOSAuthComplete(int32 LocalUserNum, bool bSuccess, const FUniqueNetId& UserId, const FString& Error)
 {
-    bEOSLoginInProgress = false;
-
+    // Cleanup delegate
     if (IOnlineSubsystem* OSS = IOnlineSubsystem::Get())
     {
         if (IOnlineIdentityPtr Identity = OSS->GetIdentityInterface())
@@ -155,514 +222,284 @@ void UVoiceChatComponent::OnEOSLoginComplete(int32 LocalUserNum, bool bWasSucces
         }
     }
 
-    if (bWasSuccessful)
+    if (bSuccess)
     {
-        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] EOS Login Successful: %s"), *UserId.ToString());
+        // Get the shared pointer from Identity interface (can't copy FUniqueNetId - it's abstract)
+        if (IOnlineSubsystem* OSS = IOnlineSubsystem::Get())
+        {
+            if (IOnlineIdentityPtr Identity = OSS->GetIdentityInterface())
+            {
+                EOSUserId = Identity->GetUniquePlayerId(LocalUserNum);
+                if (EOSUserId.IsValid())
+                {
+                    ProductUserId = EOSUserId->ToString();
+                }
+                else
+                {
+                    // Fallback to string representation from callback
+                    ProductUserId = UserId.ToString();
+                }
+            }
+        }
+        else
+        {
+            // Fallback to string representation from callback
+            ProductUserId = UserId.ToString();
+        }
+
+        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] EOS Authentication SUCCESS"));
+        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] ProductUserId: %s"), *ProductUserId);
         InitializeVoiceChat();
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] EOS Login Failed: %s"), *Error);
+        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] EOS Authentication FAILED: %s"), *Error);
+        bIsInitializing = false;
     }
 }
 
+//////////////////////////////////////////////////////////////////////////
+// Voice Chat Setup (Following EOSIntegrationKit Pattern)
+//////////////////////////////////////////////////////////////////////////
+
 void UVoiceChatComponent::InitializeVoiceChat()
 {
-    if (!Voice)
+    // Get voice chat interface (following EOSIntegrationKit pattern)
+    VoiceChat = IVoiceChat::Get();
+    if (!VoiceChat)
     {
-        Voice = IVoiceChat::Get();
-    }
-
-    if (!Voice)
-    {
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] VoiceChat interface unavailable"));
+        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] IVoiceChat::Get() returned null - is EOSVoiceChat plugin enabled?"));
+        bIsInitializing = false;
         return;
     }
 
-    if (!bVoiceInitialized)
+    // Initialize voice chat
+    if (!VoiceChat->Initialize())
     {
-        bVoiceInitialized = Voice->Initialize();
-        if (!bVoiceInitialized)
+        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] VoiceChat->Initialize() failed"));
+        bIsInitializing = false;
+        return;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Voice chat initialized"));
+
+    // Connect to voice service (following EOSIntegrationKit pattern)
+    ConnectVoiceChat();
+}
+
+void UVoiceChatComponent::ConnectVoiceChat()
+{
+    if (!VoiceChat)
+    {
+        return;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Connecting to voice service..."));
+
+    // Connect (following EOSIntegrationKit: EVIK_Local_Connect pattern)
+    VoiceChat->Connect(FOnVoiceChatConnectCompleteDelegate::CreateUObject(this, &UVoiceChatComponent::OnVoiceConnectComplete));
+}
+
+void UVoiceChatComponent::OnVoiceConnectComplete(const FVoiceChatResult& Result)
+{
+    if (Result.IsSuccess())
+    {
+        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Voice service connected"));
+        
+        // Create user and login (following EOSIntegrationKit pattern)
+        LoginVoiceUser();
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Voice connect FAILED: %s"), *Result.ErrorCode);
+        bIsInitializing = false;
+    }
+}
+
+void UVoiceChatComponent::LoginVoiceUser()
+{
+    if (!VoiceChat)
+    {
+        return;
+    }
+
+    // Create voice user (following EOSIntegrationKit pattern)
+    if (!VoiceUser)
+    {
+        VoiceUser = VoiceChat->CreateUser();
+        if (!VoiceUser)
         {
-            UE_LOG(LogTemp, Error, TEXT("[VoiceChat] VoiceChat Initialize failed"));
+            UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Failed to create VoiceUser"));
+            bIsInitializing = false;
             return;
         }
     }
 
-    LoginToVoice();
-}
-
-void UVoiceChatComponent::LoginToVoice()
-{
-    if (!Voice)
-    {
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Voice interface missing"));
-        return;
-    }
-
-    if (!VoiceUser)
-    {
-        VoiceUser = Voice->CreateUser();
-    }
-
+    // Get platform user ID for login
     IOnlineSubsystem* OSS = IOnlineSubsystem::Get();
-    if (!OSS)
+    if (!OSS || !EOSUserId.IsValid())
     {
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] OnlineSubsystem not found"));
+        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Cannot login - invalid state"));
+        bIsInitializing = false;
         return;
     }
 
     IOnlineIdentityPtr Identity = OSS->GetIdentityInterface();
     if (!Identity.IsValid())
     {
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Identity interface invalid"));
+        bIsInitializing = false;
         return;
     }
 
-    LocalUserId = Identity->GetUniquePlayerId(0);
-    if (!LocalUserId.IsValid())
+    FPlatformUserId PlatformUserId = Identity->GetPlatformUserIdFromUniqueNetId(*EOSUserId);
+
+    // Extract just the ProductUserId part (after the pipe if present)
+    // EOS ProductUserId format can be: "AccountId|ProductUserId" or just "ProductUserId"
+    FString VoiceLoginUserId = ProductUserId;
+    int32 PipeIndex;
+    if (ProductUserId.FindChar(TEXT('|'), PipeIndex))
     {
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Invalid LocalUserId"));
-        return;
+        // Extract the part after the pipe (the actual ProductUserId)
+        VoiceLoginUserId = ProductUserId.Mid(PipeIndex + 1);
+        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Extracted ProductUserId from full ID: %s -> %s"), *ProductUserId, *VoiceLoginUserId);
     }
 
-    const FPlatformUserId PlatformUserId = Identity->GetPlatformUserIdFromUniqueNetId(*LocalUserId);
+    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Logging in voice user: %s"), *VoiceLoginUserId);
 
-    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Logging into Voice as %s"), *LocalUserId->ToString());
-    HandleAutoLobbyAction();
-
+    // Login user with Product User ID (must not contain pipe character)
+    VoiceUser->Login(
+        PlatformUserId,
+        VoiceLoginUserId,
+        TEXT(""),
+        FOnVoiceChatLoginCompleteDelegate::CreateUObject(this, &UVoiceChatComponent::OnVoiceUserLoginComplete)
+    );
 }
 
-void UVoiceChatComponent::OnVoiceLoginComplete(const FString& UserName, const FVoiceChatResult& Result)
+void UVoiceChatComponent::OnVoiceUserLoginComplete(const FString& UserName, const FVoiceChatResult& Result)
 {
     if (Result.IsSuccess())
     {
-        bVoiceLoginSucceeded = true;
-        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Voice login successful for %s"), *UserName);
-        HandleAutoLobbyAction();
+        bIsReady = true;
+        bIsInitializing = false;
+
+        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] ======================================"));
+        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] VOICE SYSTEM READY!"));
+        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] ProductUserId: %s"), *ProductUserId);
+        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] ======================================"));
+
+        OnReady.Broadcast();
+
+        // Check if we have pending credentials from server (received before voice was ready)
+        if (APlayerController* PC = Cast<APlayerController>(GetOwner()))
+        {
+            if (AExampleProjectPlayerController* ExamplePC = Cast<AExampleProjectPlayerController>(PC))
+            {
+                if (!ExamplePC->PendingChannelName.IsEmpty() && !ExamplePC->PendingToken.IsEmpty())
+                {
+                    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Found pending credentials, joining channel: %s"), *ExamplePC->PendingChannelName);
+                    JoinChannel(ExamplePC->PendingChannelName, ExamplePC->PendingToken, false);
+                    // Clear pending credentials
+                    ExamplePC->PendingChannelName.Empty();
+                    ExamplePC->PendingToken.Empty();
+                    return;
+                }
+            }
+        }
+
+        // Auto-join main channel if enabled - request credentials from server
+        if (bAutoJoinMainChannel && !MainChannelName.IsEmpty())
+        {
+            RequestVoiceCredentialsFromServer();
+        }
     }
     else
     {
-        bVoiceLoginSucceeded = false;
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Voice login failed for %s: %s"), *UserName, *Result.ErrorCode);
+        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Voice user login FAILED: %s"), *Result.ErrorCode);
+        bIsInitializing = false;
     }
 }
 
-void UVoiceChatComponent::OnVoiceLogoutComplete(const FString& UserName, const FVoiceChatResult& Result)
+//////////////////////////////////////////////////////////////////////////
+// Channel Management
+//////////////////////////////////////////////////////////////////////////
+
+void UVoiceChatComponent::RequestVoiceCredentialsFromServer()
 {
-    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Voice logout complete for %s (Success: %s)"),
-        *UserName,
-        Result.IsSuccess() ? TEXT("true") : *Result.ErrorCode);
-}
-
-void UVoiceChatComponent::HostVoiceLobby()
-{
-    if (!bVoiceLoginSucceeded)
+    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Requesting voice credentials from server for channel: %s"), *MainChannelName);
+    
+    // Get PlayerController to call server RPC
+    if (APlayerController* PC = Cast<APlayerController>(GetOwner()))
     {
-        bPendingHostRequest = true;
-        StartVoiceChat();
-        return;
-    }
-
-    bPendingHostRequest = false;
-    HostLobbyInternal();
-}
-
-void UVoiceChatComponent::FindAndJoinVoiceLobby()
-{
-    if (!bVoiceLoginSucceeded)
-    {
-        bPendingJoinRequest = true;
-        StartVoiceChat();
-        return;
-    }
-
-    bPendingJoinRequest = false;
-    FindLobbyInternal();
-}
-
-void UVoiceChatComponent::LeaveVoiceLobby()
-{
-    if (!CurrentVoiceChannel.IsEmpty())
-    {
-        LeaveVoiceChannel(CurrentVoiceChannel);
-    }
-
-    EnsureSessionInterface();
-    if (SessionInterface.IsValid() && SessionInterface->GetNamedSession(LobbySessionName))
-    {
-        DestroySessionCompleteHandle = SessionInterface->AddOnDestroySessionCompleteDelegate_Handle(
-            FOnDestroySessionCompleteDelegate::CreateUObject(this, &UVoiceChatComponent::OnDestroySessionComplete));
-
-        if (!SessionInterface->DestroySession(LobbySessionName))
+        if (AExampleProjectPlayerController* ExamplePC = Cast<AExampleProjectPlayerController>(PC))
         {
-            SessionInterface->ClearOnDestroySessionCompleteDelegate_Handle(DestroySessionCompleteHandle);
-            UE_LOG(LogTemp, Warning, TEXT("[VoiceChat] DestroySession request rejected"));
+            FString ProductUserIdToSend = GetProductUserId();
+            ExamplePC->Server_RequestVoiceCredentials(ProductUserIdToSend);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("[VoiceChat] PlayerController is not AExampleProjectPlayerController"));
         }
     }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Owner is not a PlayerController"));
+    }
 }
 
-void UVoiceChatComponent::JoinVoiceChannel(const FString& ChannelName)
-{
-    if (!VoiceUser || ChannelName.IsEmpty())
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VoiceChat] Unable to join voice channel (Voice=%p, Name=%s)"),
-            VoiceUser,
-            *ChannelName);
-        return;
-    }
-
-    CurrentVoiceChannel = ChannelName;
-
-    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Joining voice channel: %s"), *ChannelName);
-    VoiceUser->JoinChannel(
-        ChannelName,
-        TEXT(""),
-        EVoiceChatChannelType::NonPositional,
-        FOnVoiceChatChannelJoinCompleteDelegate::CreateUObject(this, &UVoiceChatComponent::OnChannelJoinComplete));
-}
-
-void UVoiceChatComponent::JoinVoiceChannelForSession(FName SessionName)
-{
-    FString ChannelName = ManualChannelName;
-
-    EnsureSessionInterface();
-    if (ChannelName.IsEmpty() && SessionInterface.IsValid())
-    {
-        if (FNamedOnlineSession* NamedSession = SessionInterface->GetNamedSession(SessionName))
-        {
-            ChannelName = NamedSession->GetSessionIdStr();
-        }
-    }
-
-    if (ChannelName.IsEmpty())
-    {
-        ChannelName = SessionName.ToString();
-    }
-
-    JoinVoiceChannel(ChannelName);
-}
+//////////////////////////////////////////////////////////////////////////
+// Channel Callbacks
+//////////////////////////////////////////////////////////////////////////
 
 void UVoiceChatComponent::OnChannelJoinComplete(const FString& ChannelName, const FVoiceChatResult& Result)
 {
     if (Result.IsSuccess())
     {
-        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Joined voice channel %s"), *ChannelName);
+        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] JOINED channel: %s"), *ChannelName);
+        OnChannelJoined.Broadcast(ChannelName, true);
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Failed to join channel %s: %s"), *ChannelName, *Result.ErrorCode);
+        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] FAILED to join channel %s: %s"), *ChannelName, *Result.ErrorCode);
+        CurrentChannel.Empty();
+        OnChannelJoined.Broadcast(ChannelName, false);
     }
-}
-
-void UVoiceChatComponent::LeaveVoiceChannel(const FString& ChannelName)
-{
-    if (!VoiceUser || ChannelName.IsEmpty())
-    {
-        return;
-    }
-
-    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Leaving voice channel %s"), *ChannelName);
-    VoiceUser->LeaveChannel(
-        ChannelName,
-        FOnVoiceChatChannelLeaveCompleteDelegate::CreateUObject(this, &UVoiceChatComponent::OnChannelLeaveComplete));
 }
 
 void UVoiceChatComponent::OnChannelLeaveComplete(const FString& ChannelName, const FVoiceChatResult& Result)
 {
     if (Result.IsSuccess())
     {
-        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Left voice channel %s"), *ChannelName);
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VoiceChat] Failed to leave channel %s: %s"), *ChannelName, *Result.ErrorCode);
+        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] LEFT channel: %s"), *ChannelName);
     }
 
-    if (ChannelName == CurrentVoiceChannel)
+    if (ChannelName == CurrentChannel)
     {
-        CurrentVoiceChannel.Empty();
+        CurrentChannel.Empty();
     }
+
+    OnChannelLeft.Broadcast(ChannelName, Result.IsSuccess());
 }
 
-void UVoiceChatComponent::HandleAutoLobbyAction()
+//////////////////////////////////////////////////////////////////////////
+// Cleanup
+//////////////////////////////////////////////////////////////////////////
+
+void UVoiceChatComponent::Cleanup()
 {
-    if (bPendingHostRequest)
+    if (VoiceUser)
     {
-        bPendingHostRequest = false;
-        HostLobbyInternal();
-        return;
+        VoiceUser->Logout(FOnVoiceChatLogoutCompleteDelegate::CreateLambda([](const FString&, const FVoiceChatResult&) {}));
+        VoiceUser = nullptr;
     }
 
-    if (bPendingJoinRequest)
+    if (VoiceChat)
     {
-        bPendingJoinRequest = false;
-        FindLobbyInternal();
-        return;
+        VoiceChat->Disconnect(FOnVoiceChatDisconnectCompleteDelegate::CreateLambda([](const FVoiceChatResult&) {}));
+        VoiceChat->Uninitialize();
+        VoiceChat = nullptr;
     }
 
-    switch (AutoLobbyStrategy)
-    {
-    case EVoiceLobbyJoinStrategy::Host:
-        HostLobbyInternal();
-        break;
-    case EVoiceLobbyJoinStrategy::FindExisting:
-        FindLobbyInternal();
-        break;
-    default:
-        break;
-    }
-}
-
-bool UVoiceChatComponent::EnsureVoiceReady(const FString& ContextMessage)
-{
-
-    EnsureSessionInterface();
-    if (!SessionInterface.IsValid())
-    {
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] %s: Session interface unavailable"), *ContextMessage);
-        return false;
-    }
-
-    return true;
-}
-
-void UVoiceChatComponent::EnsureSessionInterface()
-{
-    if (SessionInterface.IsValid())
-    {
-        return;
-    }
-
-    if (IOnlineSubsystem* OSS = IOnlineSubsystem::Get())
-    {
-        SessionInterface = OSS->GetSessionInterface();
-    }
-}
-
-void UVoiceChatComponent::HostLobbyInternal()
-{
-    if (!EnsureVoiceReady(TEXT("HostLobby")))
-    {
-        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Could start session"));
-    }
-
-    if (SessionInterface->GetNamedSession(LobbySessionName))
-    {
-        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Session already exists, joining voice directly"));
-        JoinVoiceChannelForSession(LobbySessionName);
-        return;
-    }
-
-    FOnlineSessionSettings SessionSettings;
-    SessionSettings.bIsLANMatch = false;
-    SessionSettings.bShouldAdvertise = true;
-    SessionSettings.bAllowJoinInProgress = true;
-    SessionSettings.bAllowJoinViaPresence = true;
-    SessionSettings.bAllowInvites = true;
-    SessionSettings.bUsesPresence = true;
-    SessionSettings.bUseLobbiesIfAvailable = true;
-    SessionSettings.bUseLobbiesVoiceChatIfAvailable = true;
-    SessionSettings.NumPublicConnections = MaxLobbySize;
-    SessionSettings.Set(VoiceChatComponentInternal::VoiceLobbyFlag, FString(TEXT("1")), EOnlineDataAdvertisementType::ViaOnlineService);
-
-
-    CreateSessionCompleteHandle = SessionInterface->AddOnCreateSessionCompleteDelegate_Handle(
-        FOnCreateSessionCompleteDelegate::CreateUObject(this, &UVoiceChatComponent::OnCreateSessionComplete));
-
-    if (!SessionInterface->CreateSession(0, LobbySessionName, SessionSettings))
-    {
-        SessionInterface->ClearOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteHandle);
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Failed to start CreateSession"));
-    }
-    else
-    {
-        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] CreateSession completed for %s"), *LobbySessionName.ToString());
-    }
-}
-
-void UVoiceChatComponent::FindLobbyInternal()
-{
-    if (!EnsureVoiceReady(TEXT("FindLobby")))
-    {
-        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Could start session"));
-    }
-
-    if (SessionSearch.IsValid())
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VoiceChat] Lobby search already running"));
-        return;
-    }
-
-    SessionSearch = MakeShared<FOnlineSessionSearch>();
-    SessionSearch->MaxSearchResults = 50;
-    SessionSearch->bIsLanQuery = false;
-    SessionSearch->QuerySettings.Set(VoiceChatComponentInternal::VoiceLobbyFlag, FString(TEXT("1")), EOnlineComparisonOp::Equals);
-
-
-    FindSessionsCompleteHandle = SessionInterface->AddOnFindSessionsCompleteDelegate_Handle(
-        FOnFindSessionsCompleteDelegate::CreateUObject(this, &UVoiceChatComponent::OnFindSessionsComplete));
-
-    if (!SessionInterface->FindSessions(0, SessionSearch.ToSharedRef()))
-    {
-        SessionInterface->ClearOnFindSessionsCompleteDelegate_Handle(FindSessionsCompleteHandle);
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Failed to trigger FindSessions"));
-        ResetSessionSearch();
-    }
-}
-
-void UVoiceChatComponent::OnCreateSessionComplete(FName SessionName, bool bWasSuccessful)
-{
-    if (!SessionInterface.IsValid())
-    {
-        return;
-    }
-
-    SessionInterface->ClearOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteHandle);
-
-    if (bWasSuccessful)
-    {
-        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] CreateSession completed for %s"), *SessionName.ToString());
-
-        StartSessionCompleteHandle = SessionInterface->AddOnStartSessionCompleteDelegate_Handle(
-            FOnStartSessionCompleteDelegate::CreateUObject(this, &UVoiceChatComponent::OnStartSessionComplete));
-
-        if (!SessionInterface->StartSession(SessionName))
-        {
-            SessionInterface->ClearOnStartSessionCompleteDelegate_Handle(StartSessionCompleteHandle);
-            UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Failed to start session %s"), *SessionName.ToString());
-        }
-    }
-    else
-    {
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] CreateSession failed for %s"), *SessionName.ToString());
-    }
-}
-
-void UVoiceChatComponent::OnStartSessionComplete(FName SessionName, bool bWasSuccessful)
-{
-    if (!SessionInterface.IsValid())
-    {
-        return;
-    }
-
-    SessionInterface->ClearOnStartSessionCompleteDelegate_Handle(StartSessionCompleteHandle);
-
-    if (bWasSuccessful)
-    {
-        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Session %s started, joining voice channel"), *SessionName.ToString());
-        JoinVoiceChannelForSession(SessionName);
-    }
-    else
-    {
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] Failed to start session %s"), *SessionName.ToString());
-    }
-}
-
-void UVoiceChatComponent::OnDestroySessionComplete(FName SessionName, bool bWasSuccessful)
-{
-    if (!SessionInterface.IsValid())
-    {
-        return;
-    }
-
-    SessionInterface->ClearOnDestroySessionCompleteDelegate_Handle(DestroySessionCompleteHandle);
-
-    UE_LOG(LogTemp, Log, TEXT("[VoiceChat] DestroySession %s result: %s"),
-        *SessionName.ToString(),
-        bWasSuccessful ? TEXT("Success") : TEXT("Failure"));
-}
-
-void UVoiceChatComponent::OnFindSessionsComplete(bool bWasSuccessful)
-{
-    if (!SessionInterface.IsValid())
-    {
-        return;
-    }
-
-    SessionInterface->ClearOnFindSessionsCompleteDelegate_Handle(FindSessionsCompleteHandle);
-
-    if (!bWasSuccessful || !SessionSearch.IsValid() || SessionSearch->SearchResults.Num() == 0)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[VoiceChat] Lobby search finished without results"));
-        ResetSessionSearch();
-        return;
-    }
-
-    const FOnlineSessionSearchResult& Result = SessionSearch->SearchResults[0];
-
-    JoinSessionCompleteHandle = SessionInterface->AddOnJoinSessionCompleteDelegate_Handle(
-        FOnJoinSessionCompleteDelegate::CreateUObject(this, &UVoiceChatComponent::OnJoinSessionComplete));
-
-    if (!SessionInterface->JoinSession(0, LobbySessionName, Result))
-    {
-        SessionInterface->ClearOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteHandle);
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] JoinSession request rejected"));
-        ResetSessionSearch();
-    }
-    else
-    {
-        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] JoinSession completed for %s"), *LobbySessionName.ToString());
-    }
-}
-
-void UVoiceChatComponent::OnJoinSessionComplete(FName SessionName, EOnJoinSessionCompleteResult::Type Result)
-{
-    if (!SessionInterface.IsValid())
-    {
-        return;
-    }
-
-    SessionInterface->ClearOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteHandle);
-
-    if (Result == EOnJoinSessionCompleteResult::Success)
-    {
-        UE_LOG(LogTemp, Log, TEXT("[VoiceChat] Joined session %s, joining voice channel"), *SessionName.ToString());
-        JoinVoiceChannelForSession(SessionName);
-    }
-    else
-    {
-        UE_LOG(LogTemp, Error, TEXT("[VoiceChat] JoinSession failed for %s (code %d)"), *SessionName.ToString(), static_cast<int32>(Result));
-    }
-
-    ResetSessionSearch();
-}
-
-void UVoiceChatComponent::ResetSessionSearch()
-{
-    if (SessionSearch.IsValid())
-    {
-        SessionSearch.Reset();
-    }
-}
-
-void UVoiceChatComponent::CleanupDelegates()
-{
-    if (!SessionInterface.IsValid())
-    {
-        return;
-    }
-
-    if (CreateSessionCompleteHandle.IsValid())
-    {
-        SessionInterface->ClearOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteHandle);
-    }
-    if (StartSessionCompleteHandle.IsValid())
-    {
-        SessionInterface->ClearOnStartSessionCompleteDelegate_Handle(StartSessionCompleteHandle);
-    }
-    if (DestroySessionCompleteHandle.IsValid())
-    {
-        SessionInterface->ClearOnDestroySessionCompleteDelegate_Handle(DestroySessionCompleteHandle);
-    }
-    if (FindSessionsCompleteHandle.IsValid())
-    {
-        SessionInterface->ClearOnFindSessionsCompleteDelegate_Handle(FindSessionsCompleteHandle);
-    }
-    if (JoinSessionCompleteHandle.IsValid())
-    {
-        SessionInterface->ClearOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteHandle);
-    }
-
-    ResetSessionSearch();
+    bIsReady = false;
+    bIsInitializing = false;
+    CurrentChannel.Empty();
 }

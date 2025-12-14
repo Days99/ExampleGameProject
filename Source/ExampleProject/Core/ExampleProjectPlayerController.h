@@ -21,6 +21,14 @@ class AExampleProjectPlayerController : public APlayerController
 
 public:
 	void InitializeVoiceChat();
+
+	/** Server RPC: Request voice credentials for main channel */
+	UFUNCTION(Server, Reliable, WithValidation)
+	void Server_RequestVoiceCredentials(const FString& ProductUserId);
+
+	/** Client RPC: Receive voice credentials from server */
+	UFUNCTION(Client, Reliable)
+	void Client_ReceiveVoiceCredentials(const FString& ChannelName, const FString& Token);
 	
 protected:
 
@@ -40,6 +48,11 @@ protected:
 	TObjectPtr<UUserWidget> MobileControlsWidget;
 
 	UVoiceChatComponent* VoiceComp;
+
+public:
+	/** Pending voice credentials (if received before voice is ready) */
+	FString PendingChannelName;
+	FString PendingToken;
 
 
 

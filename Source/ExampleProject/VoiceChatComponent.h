@@ -1,22 +1,23 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+// VoiceChatComponent.h
+// Simplified EOS Voice Chat Component for Trusted Server Method
+// Based on EOSIntegrationKit pattern with latest EOS API
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "OnlineSubsystem.h"
 #include "Interfaces/OnlineIdentityInterface.h"
-#include "Interfaces/OnlineSessionInterface.h"
-#include "OnlineSessionSettings.h"
 #include "VoiceChat.h"
 #include "VoiceChatComponent.generated.h"
 
-UENUM(BlueprintType)
-enum class EVoiceLobbyJoinStrategy : uint8
-{
-    None UMETA(DisplayName = "Do Nothing"),
-    Host UMETA(DisplayName = "Create Lobby"),
-    FindExisting UMETA(DisplayName = "Find & Join Lobby")
-};
+// Delegate when voice system is ready
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnVoiceChatReady);
+
+// Delegate when joining a voice channel completes
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnVoiceChannelJoined, const FString&, ChannelName, bool, bSuccess);
+
+// Delegate when leaving a voice channel completes
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnVoiceChannelLeft, const FString&, ChannelName, bool, bSuccess);
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class EXAMPLEPROJECT_API UVoiceChatComponent : public UActorComponent
@@ -29,110 +30,109 @@ public:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-    /** Starts the full EOS voice chat pipeline (login + voice init). */
-    UFUNCTION(BlueprintCallable, Category = "Voice Chat|EOS")
-    void StartVoiceChat();
+    //////////////////////////////////////////////////////////////////////////
+    // Public API
+    //////////////////////////////////////////////////////////////////////////
 
-    /** Hosts a voice-enabled EOS lobby (uses EOS lobbies under the hood). */
-    UFUNCTION(BlueprintCallable, Category = "Voice Chat|EOS")
-    void HostVoiceLobby();
+    /** Initialize voice chat system (EOS login + voice connect) */
+    UFUNCTION(BlueprintCallable, Category = "Voice Chat")
+    void Initialize();
 
-    /** Finds the best matching lobby and joins it, then hooks up voice chat. */
-    UFUNCTION(BlueprintCallable, Category = "Voice Chat|EOS")
-    void FindAndJoinVoiceLobby();
+    /** Join a voice channel using server-provided credentials */
+    UFUNCTION(BlueprintCallable, Category = "Voice Chat")
+    void JoinChannel(const FString& ChannelName, const FString& Token, bool bPositional = false);
 
-    /** Leaves the active voice channel and destroys/cleans up the lobby session. */
-    UFUNCTION(BlueprintCallable, Category = "Voice Chat|EOS")
-    void LeaveVoiceLobby();
+    /** Leave current voice channel */
+    UFUNCTION(BlueprintCallable, Category = "Voice Chat")
+    void LeaveChannel();
 
-    /** Returns true when the local user finished logging in to EOS Voice services. */
-    UFUNCTION(BlueprintPure, Category = "Voice Chat|EOS")
-    bool IsVoiceChatReady() const { return bVoiceLoginSucceeded; }
+    /** Get local user's Product User ID (send this to server to request credentials) */
+    UFUNCTION(BlueprintPure, Category = "Voice Chat")
+    FString GetProductUserId() const;
+
+    /** Check if voice system is ready */
+    UFUNCTION(BlueprintPure, Category = "Voice Chat")
+    bool IsReady() const { return bIsReady; }
+
+    /** Get current channel name */
+    UFUNCTION(BlueprintPure, Category = "Voice Chat")
+    FString GetCurrentChannel() const { return CurrentChannel; }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Audio Control
+    //////////////////////////////////////////////////////////////////////////
+
+    UFUNCTION(BlueprintCallable, Category = "Voice Chat|Audio")
+    void SetMuted(bool bMuted);
+
+    UFUNCTION(BlueprintPure, Category = "Voice Chat|Audio")
+    bool IsMuted() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Voice Chat|Audio")
+    void SetInputVolume(float Volume);
+
+    UFUNCTION(BlueprintCallable, Category = "Voice Chat|Audio")
+    void SetOutputVolume(float Volume);
+
+    //////////////////////////////////////////////////////////////////////////
+    // Events
+    //////////////////////////////////////////////////////////////////////////
+
+    UPROPERTY(BlueprintAssignable, Category = "Voice Chat|Events")
+    FOnVoiceChatReady OnReady;
+
+    UPROPERTY(BlueprintAssignable, Category = "Voice Chat|Events")
+    FOnVoiceChannelJoined OnChannelJoined;
+
+    UPROPERTY(BlueprintAssignable, Category = "Voice Chat|Events")
+    FOnVoiceChannelLeft OnChannelLeft;
 
 protected:
-    /** Automatically bootstrap voice on BeginPlay. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice Chat|EOS")
-    bool bAutoStartOnBeginPlay = true;
+    /** Auto-initialize on BeginPlay */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice Chat")
+    bool bAutoInitialize = true;
 
-    /** Optional automatic lobby workflow once voice login completes. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice Chat|EOS")
-    EVoiceLobbyJoinStrategy AutoLobbyStrategy = EVoiceLobbyJoinStrategy::Host;
+    /** Auto-join main channel when voice is ready */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice Chat")
+    bool bAutoJoinMainChannel = true;
 
-    /** Name used for CreateSession/JoinSession. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice Chat|EOS")
-    FName LobbySessionName = TEXT("VoiceLobby");
+    /** Main channel name to auto-join */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice Chat")
+    FString MainChannelName = TEXT("MainChannel");
 
-    /** Keyword/Bucket used to match lobbies cross-platform. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice Chat|EOS")
-    FString LobbyKeyword = TEXT("ExampleProjectLobby");
-
-    /** Maximum number of slots available in the generated lobby. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice Chat|EOS", meta = (ClampMin = "2", ClampMax = "100"))
-    int32 MaxLobbySize = 16;
-
-    /** Optional manual channel name override (otherwise we use the EOS Lobby/Session id). */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice Chat|EOS")
-    FString ManualChannelName;
-
-    /** Should the component automatically destroy the hosted session/lobby on EndPlay. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice Chat|EOS")
-    bool bTearDownSessionOnEndPlay = true;
-
-    /** Whether to auto-leave the voice channel when the component shuts down. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice Chat|EOS")
-    bool bLeaveVoiceOnDestroy = true;
+    /** Auto-leave channel on destroy */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice Chat")
+    bool bAutoLeaveOnDestroy = true;
 
 private:
-    // EOS Identity Login
-    void LoginToEOS();
-    void OnEOSLoginComplete(int32 LocalUserNum, bool bWasSuccessful, const FUniqueNetId& UserId, const FString& Error);
+    // EOS Authentication
+    void AuthenticateEOS();
+    void OnEOSAuthComplete(int32 LocalUserNum, bool bSuccess, const FUniqueNetId& UserId, const FString& Error);
 
-    // Voice Chat Functions
+    // Voice Chat Setup (following EOSIntegrationKit pattern)
     void InitializeVoiceChat();
-    void LoginToVoice();
-    void OnVoiceLoginComplete(const FString& UserName, const FVoiceChatResult& Result);
-    void OnVoiceLogoutComplete(const FString& UserName, const FVoiceChatResult& Result);
+    void ConnectVoiceChat();
+    void OnVoiceConnectComplete(const FVoiceChatResult& Result);
+    void LoginVoiceUser();
+    void OnVoiceUserLoginComplete(const FString& UserName, const FVoiceChatResult& Result);
 
-    // Channel Functions
-    void JoinVoiceChannel(const FString& ChannelName);
-    void JoinVoiceChannelForSession(FName SessionName);
+    // Channel Management
+    void RequestVoiceCredentialsFromServer();
     void OnChannelJoinComplete(const FString& ChannelName, const FVoiceChatResult& Result);
-    void LeaveVoiceChannel(const FString& ChannelName);
     void OnChannelLeaveComplete(const FString& ChannelName, const FVoiceChatResult& Result);
 
-    // Lobby/Session helpers
-    void HandleAutoLobbyAction();
-    bool EnsureVoiceReady(const FString& ContextMessage);
-    void EnsureSessionInterface();
-    void HostLobbyInternal();
-    void FindLobbyInternal();
-    void OnCreateSessionComplete(FName SessionName, bool bWasSuccessful);
-    void OnStartSessionComplete(FName SessionName, bool bWasSuccessful);
-    void OnDestroySessionComplete(FName SessionName, bool bWasSuccessful);
-    void OnFindSessionsComplete(bool bWasSuccessful);
-    void OnJoinSessionComplete(FName SessionName, EOnJoinSessionCompleteResult::Type Result);
-    void ResetSessionSearch();
-    void CleanupDelegates();
+    // Cleanup
+    void Cleanup();
 
 private:
-    IVoiceChat* Voice = nullptr;
+    IVoiceChat* VoiceChat = nullptr;
     IVoiceChatUser* VoiceUser = nullptr;
-    IOnlineSessionPtr SessionInterface;
-    TSharedPtr<FOnlineSessionSearch> SessionSearch;
 
-    TSharedPtr<const FUniqueNetId> LocalUserId;
-    FString PlayerName;
-    FString CurrentVoiceChannel;
+    TSharedPtr<const FUniqueNetId> EOSUserId;
+    FString ProductUserId;
+    FString CurrentChannel;
 
-    FDelegateHandle CreateSessionCompleteHandle;
-    FDelegateHandle StartSessionCompleteHandle;
-    FDelegateHandle DestroySessionCompleteHandle;
-    FDelegateHandle FindSessionsCompleteHandle;
-    FDelegateHandle JoinSessionCompleteHandle;
-
-    bool bVoiceInitialized = false;
-    bool bVoiceLoginSucceeded = false;
-    bool bEOSLoginInProgress = false;
-    bool bPendingHostRequest = false;
-    bool bPendingJoinRequest = false;
+    bool bIsReady = false;
+    bool bIsInitializing = false;
+    bool bIsMuted = false;
 };
