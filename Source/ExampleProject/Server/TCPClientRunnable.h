@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -16,23 +14,34 @@ class UMatchmakingSubsystem;
 class FTCPClientRunnable : public FRunnable
 {
 public:
-    FTCPClientRunnable(UMatchmakingSubsystem* InOwner);
+    FTCPClientRunnable(UMatchmakingSubsystem* InOwner, const FString& InServerIP = TEXT("127.0.0.1"), int32 InServerPort = 8856);
     virtual ~FTCPClientRunnable();
 
-    // FRunnable interface
     virtual bool Init() override;
     virtual uint32 Run() override;
     virtual void Stop() override;
 
-    // Connection status
     bool IsConnected() const { return bConnected; }
 
-    // Send commands to server
     void HostNewGame(const FString& Name);
     void RequestSessionList();
     void JoinSession(int32 SessionId);
     void DisconnectFromSession();
     void ShutdownSession(int32 SessionId);
+
+    /** Register a Steam P2P session with the matchmaking server
+     *  Format: p|sessionname|hoststeamid|hostplayername|gamemode|maxplayers|steamlobbyid|isprivate|# */
+    void RegisterSteamP2PSession(const FString& SessionName, const FString& HostSteamId,
+        const FString& HostPlayerName, const FString& GameMode, int32 MaxPlayers,
+        const FString& SteamLobbyId, bool bIsPrivate);
+
+    /** Send heartbeat for an active Steam P2P session
+     *  Format: b|sessionid|currentplayers|mapname|# */
+    void SendSteamHeartbeat(const FString& SessionId, int32 CurrentPlayers, const FString& MapName);
+
+    /** Unregister a Steam P2P session from the matchmaking server
+     *  Format: u|sessionid|hoststeamid|# */
+    void UnregisterSteamP2PSession(const FString& SessionId, const FString& HostSteamId);
 
 private:
     void SendRawString(const FString& Message);
@@ -43,5 +52,7 @@ private:
     FThreadSafeBool bConnected;
     TWeakObjectPtr<UMatchmakingSubsystem> OwnerSubsystem;
     FCriticalSection SendMutex;
-};
 
+    FString ServerIP;
+    int32 ServerPort;
+};

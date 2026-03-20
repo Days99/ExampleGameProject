@@ -1,14 +1,15 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #include "MatchmakingLevelScript.h"
 
 #include "Blueprint/UserWidget.h"
 #include "MatchmakingSubsystem.h"
+#include "SteamSessionManager.h"
+#include "BackendSettings.h"
 #include "Core/ServerButton.h"
 #include "Components/Button.h"
 #include "Components/ScrollBox.h"
 #include "Components/VerticalBox.h"
 #include "Components/TextBlock.h"
+#include "Components/EditableTextBox.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
@@ -16,14 +17,15 @@
 void AMatchmakingLevelScript::BeginPlay() {
     Super::BeginPlay();
 
-    // Enable tick for refresh timer
     PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.bStartWithTickEnabled = true;
 
     if (UGameInstance* GI = GetGameInstance()) {
         MatchSubsystem = GI->GetSubsystem<UMatchmakingSubsystem>();
+        SteamSessionMgr = GI->GetSubsystem<USteamSessionManager>();
+        BackendSettingsSubsystem = GI->GetSubsystem<UBackendSettings>();
+
         if (MatchSubsystem) {
-            // Bind to subsystem delegates
             MatchSubsystem->OnSessionsUpdated.AddDynamic(this, &AMatchmakingLevelScript::OnSessionsUpdated);
             MatchSubsystem->OnHostRequested.AddDynamic(this, &AMatchmakingLevelScript::OnHostRequested);
             MatchSubsystem->OnConnectionStatusChanged.AddDynamic(this, &AMatchmakingLevelScript::OnConnectionStatusChanged);
@@ -32,7 +34,6 @@ void AMatchmakingLevelScript::BeginPlay() {
         }
     }
 
-    // Create widget and connect buttons
     if (MatchmakingWidgetClass) {
         MatchmakingWidget = CreateWidget<UUserWidget>(GetWorld(), MatchmakingWidgetClass);
         MatchmakingWidget->AddToViewport();
@@ -46,12 +47,27 @@ void AMatchmakingLevelScript::BeginPlay() {
             HostButton->SetIsEnabled(false);
         }
 
+        if (UButton* HostSteamButton = Cast<UButton>(MatchmakingWidget->GetWidgetFromName(TEXT("HostSteamButton")))) {
+            HostSteamButton->OnClicked.AddDynamic(this, &AMatchmakingLevelScript::OnHostSteamClicked);
+        }
+
+        BackendIPTextBox = Cast<UEditableTextBox>(MatchmakingWidget->GetWidgetFromName(TEXT("BackendIPInput")));
+        if (BackendIPTextBox && BackendSettingsSubsystem) {
+            FString CurrentAddr = FString::Printf(TEXT("%s:%d"),
+                *BackendSettingsSubsystem->GetBackendIP(),
+                BackendSettingsSubsystem->GetBackendPort());
+            BackendIPTextBox->SetText(FText::FromString(CurrentAddr));
+        }
+
+        if (UButton* ApplyIPButton = Cast<UButton>(MatchmakingWidget->GetWidgetFromName(TEXT("ApplyIPButton")))) {
+            ApplyIPButton->OnClicked.AddDynamic(this, &AMatchmakingLevelScript::OnApplyBackendIPClicked);
+        }
+
         ServerListScrollBoxWidget = Cast<UScrollBox>(MatchmakingWidget->GetWidgetFromName(TEXT("MyScrollBox")));
     }
 }
 
 void AMatchmakingLevelScript::EndPlay(const EEndPlayReason::Type EndPlayReason) {
-    // Clear the timer
     if (RefreshTimerHandle.IsValid()) {
         GetWorldTimerManager().ClearTimer(RefreshTimerHandle);
     }
@@ -63,6 +79,11 @@ void AMatchmakingLevelScript::EndPlay(const EEndPlayReason::Type EndPlayReason) 
         MatchSubsystem->OnJoinSuccess.RemoveDynamic(this, &AMatchmakingLevelScript::OnJoinSuccess);
         MatchSubsystem->OnServerError.RemoveDynamic(this, &AMatchmakingLevelScript::OnServerError);
     }
+
+    SteamSessionMgr = nullptr;
+    BackendSettingsSubsystem = nullptr;
+    BackendIPTextBox = nullptr;
+
     Super::EndPlay(EndPlayReason);
 }
 
@@ -84,30 +105,91 @@ void AMatchmakingLevelScript::OnConnectClicked() {
 
 void AMatchmakingLevelScript::OnHostClicked() {
     if (MatchSubsystem) {
-        // FIXED: HostNewGame now only takes session name (no port parameter)
         MatchSubsystem->HostNewGame(TEXT("My test server"));
     }
 }
 
-void AMatchmakingLevelScript::OnJoinSessionClicked(int32 SessionId) {
-    if (MatchSubsystem) {
-        UE_LOG(LogTemp, Log, TEXT("Attempting to join session %d"), SessionId);
-        MatchSubsystem->JoinSession(SessionId);
+void AMatchmakingLevelScript::OnHostSteamClicked() {
+    if (SteamSessionMgr) {
+        UE_LOG(LogTemp, Log, TEXT("Creating Steam P2P session..."));
+
+        SteamSessionMgr->CreateSteamSession(
+            TEXT("Steam P2P Game"),
+            8,
+            TEXT("Default"),
+            TEXT("/Game/ThirdPerson/Lvl_ThirdPerson"),
+            false
+        );
+    }
+    else {
+        UE_LOG(LogTemp, Error, TEXT("SteamSessionManager not available!"));
     }
 }
 
+void AMatchmakingLevelScript::OnApplyBackendIPClicked() {
+    if (!BackendSettingsSubsystem) {
+        UE_LOG(LogTemp, Error, TEXT("BackendSettings not available!"));
+        return;
+    }
+
+    if (BackendIPTextBox) {
+        FString NewIP = BackendIPTextBox->GetText().ToString().TrimStartAndEnd();
+        if (!NewIP.IsEmpty()) {
+            FString IP;
+            FString PortStr;
+            if (NewIP.Split(TEXT(":"), &IP, &PortStr)) {
+                int32 Port = FCString::Atoi(*PortStr);
+                if (Port > 0) {
+                    BackendSettingsSubsystem->SetBackendAddress(IP, Port);
+                }
+                else {
+                    BackendSettingsSubsystem->SetBackendAddress(IP);
+                }
+            }
+            else {
+                BackendSettingsSubsystem->SetBackendAddress(NewIP);
+            }
+            BackendSettingsSubsystem->SaveSettings();
+            UE_LOG(LogTemp, Log, TEXT("Backend address updated to: %s:%d"),
+                *BackendSettingsSubsystem->GetBackendIP(),
+                BackendSettingsSubsystem->GetBackendPort());
+        }
+    }
+}
+
+void AMatchmakingLevelScript::OnJoinSessionClicked(int32 SessionId) {
+    if (!MatchSubsystem) return;
+
+    const TArray<FMatchSessionInfo>& Sessions = MatchSubsystem->GetSessions();
+    for (const FMatchSessionInfo& SI : Sessions) {
+        if (SI.Id == SessionId) {
+            if (SI.IsSteamP2P()) {
+                UE_LOG(LogTemp, Log, TEXT("Joining Steam P2P session %d (Host: %s, SteamId: %s)"),
+                    SessionId, *SI.HostPlayerName, *SI.HostSteamId);
+                MatchSubsystem->JoinSessionByInfo(SI);
+            }
+            else {
+                UE_LOG(LogTemp, Log, TEXT("Joining dedicated session %d (%s:%d)"),
+                    SessionId, *SI.ServerIp, SI.ServerPort);
+                MatchSubsystem->JoinSession(SessionId);
+            }
+            return;
+        }
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("Session %d not found in list, trying TCP join"), SessionId);
+    MatchSubsystem->JoinSession(SessionId);
+}
+
 void AMatchmakingLevelScript::OnSessionsUpdated(const TArray<FMatchSessionInfo>& Sessions) {
-    // Rebuild UI using Sessions array (safely on game thread)
     UE_LOG(LogTemp, Log, TEXT("Sessions updated - Count: %d"), Sessions.Num());
     RebuildServerListUI();
 }
 
 void AMatchmakingLevelScript::OnHostRequested(int32 SessionId, FString ServerIp, int32 ServerPort) {
-    // FIXED: Updated signature to match new delegate (SessionId, ServerIp, ServerPort)
     UE_LOG(LogTemp, Warning, TEXT("Host request confirmed - SessionId: %d, IP: %s, Port: %d"),
         SessionId, *ServerIp, ServerPort);
 
-    // Travel to the hosted server
     if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) {
         FString Cmd = FString::Printf(TEXT("open %s:%d"), *ServerIp, ServerPort);
         PC->ConsoleCommand(*Cmd);
@@ -119,7 +201,6 @@ void AMatchmakingLevelScript::OnConnectionStatusChanged(bool bIsConnected) {
         bIsConnected ? TEXT("YES") : TEXT("NO"));
 
     if (bIsConnected) {
-        // Start the refresh timer now that we're connected
         if (!RefreshTimerHandle.IsValid()) {
             UE_LOG(LogTemp, Log, TEXT("Starting session refresh timer with interval: %.2f seconds"), RefreshInterval);
             GetWorldTimerManager().SetTimer(
@@ -127,12 +208,11 @@ void AMatchmakingLevelScript::OnConnectionStatusChanged(bool bIsConnected) {
                 this,
                 &AMatchmakingLevelScript::RefreshSessionList,
                 RefreshInterval,
-                true  // Loop
+                true
             );
         }
     }
     else {
-        // Stop the refresh timer if we're disconnected
         if (RefreshTimerHandle.IsValid()) {
             UE_LOG(LogTemp, Warning, TEXT("Stopping session refresh timer - disconnected"));
             GetWorldTimerManager().ClearTimer(RefreshTimerHandle);
@@ -142,11 +222,9 @@ void AMatchmakingLevelScript::OnConnectionStatusChanged(bool bIsConnected) {
 }
 
 void AMatchmakingLevelScript::OnJoinSuccess(int32 SessionId, FString ServerIp, int32 ServerPort) {
-    // Called when server confirmed we successfully joined a session
     UE_LOG(LogTemp, Warning, TEXT("Join confirmed - SessionId: %d, IP: %s, Port: %d"),
         SessionId, *ServerIp, ServerPort);
 
-    // Travel to the game server
     if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) {
         FString Cmd = FString::Printf(TEXT("open %s:%d"), *ServerIp, ServerPort);
         PC->ConsoleCommand(*Cmd);
@@ -154,17 +232,13 @@ void AMatchmakingLevelScript::OnJoinSuccess(int32 SessionId, FString ServerIp, i
 }
 
 void AMatchmakingLevelScript::OnServerError(FString ErrorCode) {
-    // Handle server errors
     UE_LOG(LogTemp, Error, TEXT("Server error received: %s"), *ErrorCode);
 
-    // You could display this in UI
     if (ErrorCode == TEXT("NoAvailablePorts")) {
         UE_LOG(LogTemp, Error, TEXT("Server has no available ports to host a new session!"));
-        // Show error message to user in UI
     }
     else if (ErrorCode == TEXT("SessionNotFound")) {
         UE_LOG(LogTemp, Error, TEXT("The session you're trying to join no longer exists!"));
-        // Refresh session list
         RefreshSessionList();
     }
     else if (ErrorCode == TEXT("NotAuthorized")) {
@@ -175,17 +249,14 @@ void AMatchmakingLevelScript::OnServerError(FString ErrorCode) {
 void AMatchmakingLevelScript::RebuildServerListUI() {
     if (!ServerListScrollBoxWidget || !MatchSubsystem) return;
 
-    // Clear existing
     TArray<UWidget*> children = ServerListScrollBoxWidget->GetAllChildren();
     for (UWidget* W : children) {
         W->RemoveFromParent();
     }
 
-    // Fill with current sessions
     const TArray<FMatchSessionInfo>& Sessions = MatchSubsystem->GetSessions();
 
     if (Sessions.Num() == 0) {
-        // Optionally show "No sessions available" message
         UVerticalBox* Box = NewObject<UVerticalBox>(this);
         ServerListScrollBoxWidget->AddChild(Box);
 
@@ -199,22 +270,24 @@ void AMatchmakingLevelScript::RebuildServerListUI() {
         UVerticalBox* Box = NewObject<UVerticalBox>(this);
         ServerListScrollBoxWidget->AddChild(Box);
 
-        // Create a server button widget for each entry
         UServerButton* ItemBtn = NewObject<UServerButton>(this);
         ItemBtn->SetSessionInfo(SI);
 
-        // Display session info with player count
-        FString DisplayText = FString::Printf(TEXT("%s (%d players) - %s:%d"),
-            *SI.Name, SI.PlayerCount, *SI.ServerIp, SI.ServerPort);
+        FString DisplayText;
+        if (SI.IsSteamP2P()) {
+            DisplayText = FString::Printf(TEXT("[P2P] %s (%d/%d) - Host: %s | %s"),
+                *SI.Name, SI.PlayerCount, SI.MaxPlayers, *SI.HostPlayerName, *SI.GameMode);
+        }
+        else {
+            DisplayText = FString::Printf(TEXT("[Dedicated] %s (%d players) - %s:%d"),
+                *SI.Name, SI.PlayerCount, *SI.ServerIp, SI.ServerPort);
+        }
 
         UTextBlock* Txt = NewObject<UTextBlock>(this);
         Txt->SetText(FText::FromString(DisplayText));
         ItemBtn->AddChild(Txt);
 
-        // Bind click event to join this session
         ItemBtn->OnServerButtonClicked.AddDynamic(this, &AMatchmakingLevelScript::OnJoinSessionClicked);
-
         Box->AddChildToVerticalBox(ItemBtn);
     }
 }
-

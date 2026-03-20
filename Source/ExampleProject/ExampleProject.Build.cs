@@ -25,10 +25,15 @@ public class ExampleProject : ModuleRules
             "OnlineSubsystem",
 			"OnlineSubsystemUtils",
 			"OnlineSubsystemEOS",
+			"OnlineSubsystemSteam",
 			"OnlineServicesInterface",
 			"OnlineServicesEOS",
 			"VoiceChat",
-			"EOSVoiceChat"
+			"EOSVoiceChat",
+			"AdvancedSessions",
+			"AdvancedSteamSessions",
+			"SteamSockets",
+			"Steamworks"
         });
 
 		PrivateDependencyModuleNames.AddRange(new string[] {

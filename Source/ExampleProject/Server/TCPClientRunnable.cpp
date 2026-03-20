@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #include "Server/TCPClientRunnable.h"
 
 #include "Sockets.h"
@@ -9,13 +7,16 @@
 #include "Async/Async.h"
 #include <Interfaces/IPv4/IPv4Address.h>
 
-FTCPClientRunnable::FTCPClientRunnable(UMatchmakingSubsystem* InOwner)
+FTCPClientRunnable::FTCPClientRunnable(UMatchmakingSubsystem* InOwner, const FString& InServerIP, int32 InServerPort)
     : Thread(nullptr)
     , Socket(nullptr)
     , bRun(true)
     , bConnected(false)
     , OwnerSubsystem(InOwner)
+    , ServerIP(InServerIP)
+    , ServerPort(InServerPort)
 {
+    UE_LOG(LogTemp, Log, TEXT("TCPClientRunnable: Connecting to %s:%d"), *ServerIP, ServerPort);
     Thread = FRunnableThread::Create(this, TEXT("FTCPClientRunnable"), 0, TPri_Normal);
 }
 
@@ -34,21 +35,26 @@ FTCPClientRunnable::~FTCPClientRunnable() {
 }
 
 bool FTCPClientRunnable::Init() {
-    // create socket
     Socket = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateSocket(NAME_Stream, TEXT("matchclient"), false);
     if (!Socket) return false;
 
     int32 NewSize = 0;
     Socket->SetReceiveBufferSize(1024, NewSize);
 
-    FIPv4Address Addr(68, 221, 160, 33);
+    FIPv4Address Addr;
+    if (!FIPv4Address::Parse(ServerIP, Addr))
+    {
+        UE_LOG(LogTemp, Error, TEXT("TCPClientRunnable: Failed to parse IP address: %s"), *ServerIP);
+        return false;
+    }
     TSharedRef<FInternetAddr> InternetAddr = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr();
     InternetAddr->SetIp(Addr.Value);
-    InternetAddr->SetPort(8856);
+    InternetAddr->SetPort(ServerPort);
+
+    UE_LOG(LogTemp, Log, TEXT("TCPClientRunnable: Attempting connection to %s:%d"), *ServerIP, ServerPort);
 
     bConnected = Socket->Connect(*InternetAddr);
 
-    // Notify subsystem about connection status on game thread
     if (OwnerSubsystem.IsValid()) {
         TWeakObjectPtr<UMatchmakingSubsystem> WeakOwner = OwnerSubsystem;
         bool bConnectionSuccess = bConnected;
@@ -56,14 +62,13 @@ bool FTCPClientRunnable::Init() {
             if (WeakOwner.IsValid()) {
                 WeakOwner->HandleConnectionStatusChanged(bConnectionSuccess);
             }
-            });
+        });
     }
 
     return true;
 }
 
 uint32 FTCPClientRunnable::Run() {
-    // After connection, send initial 'g|#' to request sessions
     if (bConnected) {
         SendRawString(TEXT("g|#"));
     }
@@ -77,18 +82,16 @@ uint32 FTCPClientRunnable::Run() {
             Received.SetNumUninitialized(Pending + 1);
             int32 Read = 0;
             if (Socket->Recv(Received.GetData(), Pending, Read)) {
-                // Ensure null-terminated
                 Received[Read] = '\0';
                 FString ServerMessage = FString(UTF8_TO_TCHAR(reinterpret_cast<const char*>(Received.GetData())));
 
-                // marshal back to game thread
                 if (OwnerSubsystem.IsValid()) {
                     TWeakObjectPtr<UMatchmakingSubsystem> WeakOwner = OwnerSubsystem;
                     AsyncTask(ENamedThreads::GameThread, [WeakOwner, ServerMessage]() {
                         if (WeakOwner.IsValid()) {
                             WeakOwner->HandleServerMessage(ServerMessage);
                         }
-                        });
+                    });
                 }
             }
         }
@@ -106,7 +109,6 @@ void FTCPClientRunnable::Stop() {
 void FTCPClientRunnable::SendRawString(const FString& Message) {
     if (!Socket) return;
 
-    // guard send with mutex to be safe if called from different threads
     FScopeLock Lock(&SendMutex);
 
     FTCHARToUTF8 Converter(*Message);
@@ -116,8 +118,6 @@ void FTCPClientRunnable::SendRawString(const FString& Message) {
 
 void FTCPClientRunnable::HostNewGame(const FString& Name) {
     if (!Socket) return;
-
-    // Format: h|sessionname|#
     FString Serialized = FString::Printf(TEXT("h|%s|#"), *Name);
     SendRawString(Serialized);
 }
@@ -129,24 +129,61 @@ void FTCPClientRunnable::RequestSessionList() {
 
 void FTCPClientRunnable::JoinSession(int32 SessionId) {
     if (!Socket || !bConnected) return;
-
-    // Format: j|sessionid|#
     FString Message = FString::Printf(TEXT("j|%d|#"), SessionId);
     SendRawString(Message);
 }
 
 void FTCPClientRunnable::DisconnectFromSession() {
     if (!Socket || !bConnected) return;
-
-    // Format: d|#
     SendRawString(TEXT("d|#"));
 }
 
 void FTCPClientRunnable::ShutdownSession(int32 SessionId) {
     if (!Socket || !bConnected) return;
-
-    // Format: k|sessionid|#
     FString Message = FString::Printf(TEXT("k|%d|#"), SessionId);
     SendRawString(Message);
 }
 
+void FTCPClientRunnable::RegisterSteamP2PSession(
+    const FString& SessionName,
+    const FString& HostSteamId,
+    const FString& HostPlayerName,
+    const FString& GameMode,
+    int32 MaxPlayers,
+    const FString& SteamLobbyId,
+    bool bIsPrivate)
+{
+    if (!Socket || !bConnected) return;
+
+    FString Message = FString::Printf(TEXT("p|%s|%s|%s|%s|%d|%s|%d|#"),
+        *SessionName, *HostSteamId, *HostPlayerName, *GameMode, MaxPlayers,
+        *SteamLobbyId, bIsPrivate ? 1 : 0);
+    SendRawString(Message);
+
+    UE_LOG(LogTemp, Log, TEXT("TCPClientRunnable: Sent Steam P2P register - %s"), *Message);
+}
+
+void FTCPClientRunnable::SendSteamHeartbeat(
+    const FString& SessionId,
+    int32 CurrentPlayers,
+    const FString& MapName)
+{
+    if (!Socket || !bConnected) return;
+
+    FString Message = FString::Printf(TEXT("b|%s|%d|%s|#"),
+        *SessionId, CurrentPlayers, *MapName);
+    SendRawString(Message);
+}
+
+void FTCPClientRunnable::UnregisterSteamP2PSession(
+    const FString& SessionId,
+    const FString& HostSteamId)
+{
+    if (!Socket || !bConnected) return;
+
+    FString Message = FString::Printf(TEXT("u|%s|%s|#"),
+        *SessionId, *HostSteamId);
+    SendRawString(Message);
+
+    UE_LOG(LogTemp, Log, TEXT("TCPClientRunnable: Sent Steam P2P unregister - SessionId: %s"), *SessionId);
+}

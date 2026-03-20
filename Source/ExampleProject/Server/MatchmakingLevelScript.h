@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -9,7 +7,10 @@
 
 class UUserWidget;
 class UMatchmakingSubsystem;
+class USteamSessionManager;
+class UBackendSettings;
 class UScrollBox;
+class UEditableTextBox;
 
 /**
  * Level script for managing matchmaking UI and interactions
@@ -23,26 +24,30 @@ public:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-    // Widget class to spawn
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Matchmaking")
     TSubclassOf<UUserWidget> MatchmakingWidgetClass;
 
-    // Auto-refresh interval in seconds
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Matchmaking")
     float RefreshInterval = 5.0f;
 
 protected:
-    // Button callbacks
     UFUNCTION()
     void OnConnectClicked();
 
     UFUNCTION()
     void OnHostClicked();
 
+    /** Host a Steam P2P session */
+    UFUNCTION()
+    void OnHostSteamClicked();
+
+    /** Apply the backend IP entered in the text box */
+    UFUNCTION()
+    void OnApplyBackendIPClicked();
+
     UFUNCTION()
     void OnJoinSessionClicked(int32 SessionId);
 
-    // Delegate callbacks from subsystem
     UFUNCTION()
     void OnSessionsUpdated(const TArray<FMatchSessionInfo>& Sessions);
 
@@ -58,11 +63,9 @@ protected:
     UFUNCTION()
     void OnServerError(FString ErrorCode);
 
-    // Timer callback
     UFUNCTION()
     void RefreshSessionList();
 
-    // UI rebuild
     void RebuildServerListUI();
 
 private:
@@ -73,7 +76,16 @@ private:
     UMatchmakingSubsystem* MatchSubsystem;
 
     UPROPERTY()
+    USteamSessionManager* SteamSessionMgr;
+
+    UPROPERTY()
+    UBackendSettings* BackendSettingsSubsystem;
+
+    UPROPERTY()
     UScrollBox* ServerListScrollBoxWidget;
+
+    UPROPERTY()
+    UEditableTextBox* BackendIPTextBox;
 
     FTimerHandle RefreshTimerHandle;
 };

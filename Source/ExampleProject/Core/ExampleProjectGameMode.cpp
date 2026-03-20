@@ -38,18 +38,7 @@ void AExampleProjectGameMode::InitializeVoiceManager()
 
 	UE_LOG(LogTemp, Log, TEXT("[GameMode] Initializing Voice Room Manager..."));
 
-	// Spawn voice room manager
-	VoiceRoomManager = GetWorld()->SpawnActor<AVoiceRoomManager>();
-	if (VoiceRoomManager)
-	{
-		// Bind to credentials ready event
-		VoiceRoomManager->OnVoiceCredentialsReady.AddDynamic(this, &AExampleProjectGameMode::OnVoiceCredentialsReady);
-		UE_LOG(LogTemp, Log, TEXT("[GameMode] Voice Room Manager initialized"));
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("[GameMode] Failed to spawn Voice Room Manager"));
-	}
+
 }
 
 void AExampleProjectGameMode::PostLogin(APlayerController* NewPlayer)
